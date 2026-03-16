@@ -4,8 +4,6 @@ GCToolkit is a set of libraries for analyzing HotSpot Java garbage collection (G
 
 For more detail you can read our [Launch Blog Post](https://devblogs.microsoft.com/java/introducing-microsoft-gctoolkit/).
 
-[![GCToolKit build with Maven](https://github.com/microsoft/gctoolkit/actions/workflows/maven.yml/badge.svg)](https://github.com/microsoft/gctoolkit/actions/workflows/maven.yml)
-
 ---
 
 ## Introduction
