@@ -1,5 +1,4 @@
 name: SonarQube Scan
-
 on:
   push:
     branches:
@@ -7,16 +6,6 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to scan against'
-        required: true
-        type: choice
-        options:
-          - dev19
-          - staging
-          - prod
   schedule:
     # Nightly scan at 2:00 AM UTC
     - cron: '0 2 * * *'
@@ -25,84 +14,31 @@ permissions:
   contents: read
 
 jobs:
-  sonar-scan:
-    name: Build and Scan with SonarQube (${{ github.event.inputs.environment || 'staging' }})
+  build:
+    name: Build and analyze
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'staging' }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for better analysis
-
-      - name: Set up JDK 21
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: 21
-          distribution: 'zulu'
-          cache: 'maven'
-
+          java-version: 17
+          distribution: 'zulu' # Alternative distribution options are available.
       - name: Cache SonarQube packages
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-
       - name: Cache Maven packages
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
-
       - name: Build and analyze
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_ARCHITECTURE_EXPORT_GRAPHS: true
-          SONAR_ARCHITECTURE_EXPORT_FLAVOR: true
-          SONAR_ARCHITECTURE_EXPORT_ISSUES: true
-          SONAR_ARCHITECTURE_VISUALIZATION_ENABLED: false
-          SONAR_ARCHITECTURE_ENABLE: true
-          SONAR_ARCHITECTURE_PREVIEW_ENABLE: true
-          SONAR_ARCHITECTURE_PREVIEW_AVAILABLE: true
-        run: |
-          # Build Maven parameters
-          MVN_PARAMS=(
-            "-B"
-            "verify"
-            "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar"
-            "-Dsonar.projectKey=lucas-paulger-sonarsource_gctoolkit"
-            "-Dsonar.host.url=${SONAR_HOST_URL}"
-            "-Dsonar.token=${SONAR_TOKEN}"
-            "-Dsonar.verbose=true"
-            "-DskipTests"
-            "-Dsonar.featureflag.design-architecture-squad-enable-advanced=true"
-            "-Dsonar.featureflag.design-architecture-squad-enable-basic=true"
-          )
-
-          # Add PR-specific parameters
-          if [ -n "${{ github.event.pull_request.number }}" ]; then
-            MVN_PARAMS+=("-Dsonar.pullrequest.key=${{ github.event.pull_request.number }}")
-            MVN_PARAMS+=("-Dsonar.pullrequest.branch=${{ github.head_ref }}")
-            MVN_PARAMS+=("-Dsonar.pullrequest.base=${{ github.base_ref }}")
-          else
-            # For branch pushes, specify the branch name
-            MVN_PARAMS+=("-Dsonar.branch.name=${{ github.ref_name }}")
-          fi
-
-          # Run Maven with scanner
-          mvn "${MVN_PARAMS[@]}"
-
-          # List architecture exports
-          ls -lR ./target/sonar/architecture/exports/ || true
-          echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
-      - name: Store DNA XML & JSON files
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.DATE }}-${{ github.event.repository.name }}-${{ env.SHORT_SHA }}-dna-scan-artifacts
-          path: ./target/sonar/architecture/exports/
+        run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=tom-howlett-sonarsource_gctoolkit
