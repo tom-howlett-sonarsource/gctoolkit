@@ -3,11 +3,12 @@ package com.microsoft.gctoolkit.integration.aggregation;
 import com.microsoft.gctoolkit.event.GarbageCollectionTypes;
 
 import java.io.PrintStream;
-import java.util.HashMap;
+import java.util.EnumMap;
+import java.util.Map;
 
 public class CollectionCycleCountsSummary extends CollectionCycleCountsAggregation {
 
-    private HashMap<GarbageCollectionTypes,Integer> collectionCycleCounts = new HashMap<>();
+    private Map<GarbageCollectionTypes,Integer> collectionCycleCounts = new EnumMap<>(GarbageCollectionTypes.class);
     @Override
     public void count(GarbageCollectionTypes gcType) {
         collectionCycleCounts.compute(gcType, (key, value) -> value == null ? 1 : ++value);
