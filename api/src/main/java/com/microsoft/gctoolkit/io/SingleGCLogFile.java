@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
