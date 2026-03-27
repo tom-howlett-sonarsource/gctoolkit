@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "sonarqube-context-augmentation": {
+    "sonarqube": {
       "command": "docker",
       "args": [
         "run", "-i", "--rm", "--pull=always",
