@@ -4,6 +4,7 @@ gclogs/shenandoah
 gclogs/streaming
 gclogs/unified
 gclogs/zgc
+mcplogs/**
 
 unifiedrules.txt
 gctoolkit-testdata-*.zip
