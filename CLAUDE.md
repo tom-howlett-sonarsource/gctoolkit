@@ -10,12 +10,10 @@
 ## GUIDE Phase - Before Generating Code
 
 **Before generating or editing code** you MUST:
-1. Call `get_guidelines` for project context and coding standards
-2. Locate existing code with `search_by_signature_patterns` or `search_by_body_patterns`
-3. Read implementation with `get_source_code`
-
-**When changing architecture or dependencies** you MUST:
-- Check `get_current_architecture` and `get_intended_architecture`
+- Call `get_guidelines` for project context and coding standards
+- Call `get_current_architecture` and `get_intended_architecture`
+-  Locate existing code with `search_by_signature_patterns` or `search_by_body_patterns`. Do this before you explore the files directly, they will speed up the process
+-  Read implementation with `get_source_code`
 - Analyze impact using:
   - `get_upstream_call_flow` / `get_downstream_call_flow` - trace method calls
   - `get_references` - find all usages
