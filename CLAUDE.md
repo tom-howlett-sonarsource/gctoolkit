@@ -17,7 +17,7 @@
 - Analyze impact using:
   - `get_upstream_call_flow` / `get_downstream_call_flow` - trace method calls
   - `get_references` - find all usages
-  - `get_type_hierarchy` - check inheritance
+  - `get_type_hierarchy` - If there is a class hierarchy follow its patterns
 
 ## VERIFY Phase - After Generating Code
 
