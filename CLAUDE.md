@@ -19,6 +19,8 @@
   - `get_references` - find all usages
   - `get_type_hierarchy` - If there is a class hierarchy follow its patterns
 
+When coding use red/green TDD. Sonarqube will require 80% code coverage on new code
+
 ## VERIFY Phase - After Generating Code
 
 You must strictly follow this Analyze-Then-Commit workflow for every code modification. No code is considered complete until it has passed the following SonarQube validation loop:
