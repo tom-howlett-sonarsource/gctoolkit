@@ -15,6 +15,7 @@
     <name>GCToolKit Integration</name>
     <properties>
         <gcLogFile>../gclogs/preunified/cms/defnew/details/defnew.log</gcLogFile>
+        <sonar.skip>true</sonar.skip>
     </properties>
 
 
