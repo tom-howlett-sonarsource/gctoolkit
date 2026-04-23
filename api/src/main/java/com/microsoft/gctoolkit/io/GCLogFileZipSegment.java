@@ -137,6 +137,14 @@ public class GCLogFileZipSegment implements LogFileSegment {
         return new ArrayList<String>().stream();
     }
 
+    @Override
+    public long size() throws IOException {
+        try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+            ZipEntry entry = zipFile.getEntry(segmentName);
+            return entry.getSize();
+        }
+    }
+
     /**
      * {@inheritDoc}
      * @return Returns {@code this.getPath().toString(); }

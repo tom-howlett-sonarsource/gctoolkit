@@ -161,6 +161,21 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = orderedList;
     }
 
+    /**
+     * Return the total byte size across all log segments.
+     * For plain text and directory-based logs, this is the sum of file sizes on disk.
+     * For zip-based logs, this is the sum of uncompressed entry sizes.
+     * @return The total byte size of all log segments.
+     * @throws IOException if a segment's size cannot be determined.
+     */
+    public long totalByteSize() throws IOException {
+        long total = 0;
+        for (LogFileSegment segment : logFiles().collect(toList())) {
+            total += segment.size();
+        }
+        return total;
+    }
+
     private List<LogFileSegment> removeIneligibleSegments(final List<LogFileSegment> logFileSegments, final LogFileSegment current) {
         return logFileSegments.stream()
                 .filter( segment -> segment.getEndTime() <= current.getStartTime())
