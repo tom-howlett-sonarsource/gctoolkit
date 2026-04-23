@@ -58,6 +58,29 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the total byte size across all log segments.
+     * For plain text segments, this is the file size on disk.
+     * For zip segments, this is the uncompressed size of each entry.
+     * @return The total byte size across all segments.
+     * @throws IOException if the size of a segment cannot be determined.
+     */
+    public long getTotalByteSize() throws IOException {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            }
+        }
+        long total = 0;
+        for (LogFileSegment segment : logFiles().collect(toList())) {
+            total += segment.getByteSize();
+        }
+        return total;
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
