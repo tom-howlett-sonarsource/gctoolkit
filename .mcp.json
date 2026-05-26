@@ -3,16 +3,28 @@
     "SONARQUBE_PROJ": {
       "command": "docker",
       "args": [
-        "run", "-i", "--rm", "--pull=always",
-        "-e", "SONARQUBE_URL",
-        "-e", "SONARQUBE_TOKEN",
-        "-e", "SONARQUBE_ORG",
-        "-e", "SONARQUBE_PROJECT_KEY",
-        "-e", "SONARQUBE_TOOLSETS",
-        "-e", "SONARQUBE_DEBUG_ENABLED",
-        "-e", "SONAR_LOG_LEVEL",
-        "-v", "/Users/Tom.Howlett/repos/gctoolkit:/app/mcp-workspace:rw",
-        "-v", "/Users/Tom.Howlett/repos/gctoolkit/mcplogs:/app/storage/logs:rw",
+        "run",
+        "-i",
+        "--rm",
+        "--pull=always",
+        "-e",
+        "SONARQUBE_URL",
+        "-e",
+        "SONARQUBE_TOKEN",
+        "-e",
+        "SONARQUBE_ORG",
+        "-e",
+        "SONARQUBE_PROJECT_KEY",
+        "-e",
+        "SONARQUBE_TOOLSETS",
+        "-e",
+        "SONARQUBE_DEBUG_ENABLED",
+        "-e",
+        "SONAR_LOG_LEVEL",
+        "-v",
+        "/Users/Tom.Howlett/repos/gctoolkit:/app/mcp-workspace:rw",
+        "-v",
+        "/Users/Tom.Howlett/repos/gctoolkit/mcplogs:/app/storage/logs:rw",
         "mcp/sonarqube"
       ],
       "env": {
@@ -24,6 +36,13 @@
         "SONARQUBE_DEBUG_ENABLED": "true",
         "SONAR_LOG_LEVEL": "DEBUG"
       }
+    },
+    "sonarqube": {
+      "command": "sonar",
+      "args": [
+        "run",
+        "mcp"
+      ]
     }
   }
 }
