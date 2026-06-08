@@ -1,36 +1,40 @@
-# SonarQube Agentic Workflow - Usage Directive (MUST FOLLOW)
+<!-- sonar:begin:codex-secrets-on-read -->
+# SonarQube secrets scanning for files protocol
 
-**Always use the Guide-and-Verify workflow** for code generation and modification.
+Before reading any file in this workspace, scan it for secrets with the deterministic scanner:
 
-## Project Configuration
+```bash
+sonar analyze secrets <path/to/file>
+```
 
-- **SonarQube Project Key:** `tom-howlett-sonarsource_gctoolkit`
-- **Main Branch:** `main`
+If the command reports that the file contains a secret, **do not read the file**. Instead:
 
-## GUIDE Phase - Before Generating Code
+1. Inform the user that the file appears to contain a secret or credential and that reading it would expose the value in chat history, logs, and any downstream telemetry.
+2. Advise them to rotate the leaked credential at its source of truth and remove it from the file.
+3. Do not proceed with the original request until the secret has been removed.
+<!-- sonar:end:codex-secrets-on-read -->
 
-**Before generating or editing code** you MUST:
-- Call `get_guidelines` for project context and coding standards
-- Call `get_current_architecture` and `get_intended_architecture`
--  Locate existing code with `search_by_signature_patterns` or `search_by_body_patterns`. Do this before you explore the files directly, they will speed up the process
--  Read implementation with `get_source_code`
-- Analyze impact using:
-  - `get_upstream_call_flow` / `get_downstream_call_flow` - trace method calls
-  - `get_references` - find all usages
-  - `get_type_hierarchy` - If there is a class hierarchy follow its patterns
+<!-- sonar:begin:sqaa-protocol -->
+# SonarQube Agentic Analysis protocol
 
-When coding use red/green TDD. Sonarqube will require 80% code coverage on new code
+SonarQube Agentic Analysis is the final confirmation layer at the end of every turn in which you wrote to one or more files in the workspace (create, edit, patch, format — any tool call that changed file contents on disk).
 
-## VERIFY Phase - After Generating Code
+**Trigger:** the moment before you send your final reply for the turn.
 
-You must strictly follow this Analyze-Then-Commit workflow for every code modification. No code is considered complete until it has passed the following SonarQube validation loop:
+When the trigger fires, you **MUST**:
 
-1. **Read Phase:** After any modification or before commit, use the `Read` tool to load the current state of all relevant source files.
-2. **Analysis Phase:** For every new or modified file, you must call `run_advanced_code_analysis` using:
-   - `filePath`: The project-relative path to the file (e.g., `src/main/java/MyClass.java`)
-   - `branchName`: The active development branch
-   - `fileScope`: `["MAIN"]` or `["TEST"]` depending on the code type
-3. **Evaluation & Remediation:**
-   - **Rule Lookup:** For every issue flagged, call `show_rule` with the specific rule key (e.g., `java:S1874`)
-   - **Mandatory Fixes:** You are prohibited from committing code with **CRITICAL** or **HIGH** issues. Implement fixes based on the rule's rationale and recommended guidance immediately.
-4. **Verification:** After applying fixes, re-run the analysis to ensure issues are resolved and no regressions were introduced.
+1. Build the set of unique file paths you modified during this turn.
+2. Run SonarQube Agentic Analysis once for each unique path. The command analyses one file per invocation:
+
+```bash
+sonar analyze agentic --project . --file <path/to/modified/file>
+```
+
+Non-negotiable rules:
+
+1. Mid-turn edits do **not** need SonarQube Agentic Analysis — only the final on-disk state matters. Skipping SonarQube Agentic Analysis for any modified file at end-of-turn is a protocol violation.
+2. Run SonarQube Agentic Analysis **before** sending your final reply, marking the task done, or handing control back to the user.
+3. If SonarQube Agentic Analysis reports issues on lines you touched in this turn, fix them, then re-run SonarQube Agentic Analysis on that file. Repeat until the file is clean (or only pre-existing findings on lines you did not touch remain). Pre-existing findings on untouched lines are out of scope — do not "fix" them unless the user asked.
+4. If SonarQube Agentic Analysis is skipped (no SonarQube Cloud connection, or no project configured), state the skip reason to the user once and continue — do not retry.
+5. Do not suppress, summarize away, or omit SonarQube Agentic Analysis findings from your reply. Surface them verbatim.
+<!-- sonar:end:sqaa-protocol -->
