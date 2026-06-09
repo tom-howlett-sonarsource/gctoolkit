@@ -14,7 +14,8 @@ If the command reports that the file contains a secret, **do not read the file**
 3. Do not proceed with the original request until the secret has been removed.
 <!-- sonar:end:codex-secrets-on-read -->
 
-<!-- sonar:begin:sqaa-protocol -->
+
+<!-- sonar:begin:sonarqube-agentic-analysis-protocol -->
 # SonarQube Agentic Analysis protocol
 
 SonarQube Agentic Analysis is the final confirmation layer at the end of every turn in which you wrote to one or more files in the workspace (create, edit, patch, format — any tool call that changed file contents on disk).
@@ -27,7 +28,7 @@ When the trigger fires, you **MUST**:
 2. Run SonarQube Agentic Analysis once for each unique path. The command analyses one file per invocation:
 
 ```bash
-sonar analyze agentic --project . --file <path/to/modified/file>
+sonar analyze agentic --project tom-howlett-sonarsource_gctoolkit --file <path/to/modified/file>
 ```
 
 Non-negotiable rules:
@@ -37,4 +38,4 @@ Non-negotiable rules:
 3. If SonarQube Agentic Analysis reports issues on lines you touched in this turn, fix them, then re-run SonarQube Agentic Analysis on that file. Repeat until the file is clean (or only pre-existing findings on lines you did not touch remain). Pre-existing findings on untouched lines are out of scope — do not "fix" them unless the user asked.
 4. If SonarQube Agentic Analysis is skipped (no SonarQube Cloud connection, or no project configured), state the skip reason to the user once and continue — do not retry.
 5. Do not suppress, summarize away, or omit SonarQube Agentic Analysis findings from your reply. Surface them verbatim.
-<!-- sonar:end:sqaa-protocol -->
+<!-- sonar:end:sonarqube-agentic-analysis-protocol -->
