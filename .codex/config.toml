@@ -1,9 +1,7 @@
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]
-writable_roots = [
-  "/Users/Tom.Howlett/.sonar",
-]
+writable_roots = [ "/Users/Tom.Howlett/.sonar" ]
 
 [mcp_servers.sonarqube]
 command = "sonar"
