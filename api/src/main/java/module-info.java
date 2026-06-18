@@ -30,6 +30,7 @@ import com.microsoft.gctoolkit.jvm.UnifiedJavaVirtualMachine;
  * @uses com.microsoft.gctoolkit.aggregator.Aggregator
  */
 module com.microsoft.gctoolkit.api {
+    requires com.microsoft.gctoolkit.gcsource;
     requires java.logging;
 
     exports com.microsoft.gctoolkit;
@@ -54,7 +55,6 @@ module com.microsoft.gctoolkit.api {
     uses com.microsoft.gctoolkit.message.JVMEventChannel;
     uses com.microsoft.gctoolkit.message.JVMEventChannelListener;
 
-    // todo: no need to load with SPI
     provides com.microsoft.gctoolkit.jvm.JavaVirtualMachine with
             PreUnifiedJavaVirtualMachine,
             UnifiedJavaVirtualMachine;

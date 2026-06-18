@@ -2,21 +2,17 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.gcsource.GCLogSources;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.List;
-import java.util.stream.Collector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -26,6 +22,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOGGER = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -68,40 +66,22 @@ public class GCLogFileZipSegment implements LogFileSegment {
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
             List<String> tail = stream().
-                    collect(tail(100));
+                    collect(GCLogSources.tailCollector(100));
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
                     .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? dateTimeStamp.getTimeStamp() : 0))
+                    .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? sortableTime(dateTimeStamp) : 0))
                     .orElse(DateTimeStamp.EMPTY_DATE);
         }
         return endTime;
-    }
-
-    public <T> Collector<T, ?, List<T>> tail(int n) {
-        return Collector.<T, Deque<T>, List<T>>of(ArrayDeque::new, (buffer, line) -> {
-            if(buffer.size() == n)
-                buffer.pollFirst();
-            buffer.add(line);
-        }, (buffer, list) -> {
-            while(list.size() < n && !buffer.isEmpty()) {
-                list.addFirst(buffer.pollLast());
-            }
-            return list;
-        }, ArrayList::new);
     }
 
     @Override
     public double getStartTime() {
         try {
             ageOfJVMAtLogStart();
-            if ( startTime.hasTimeStamp())
-                return startTime.getTimeStamp();
-            else if ( startTime.hasDateStamp())
-                return startTime.toEpochInMillis();
-            else
-                return Double.MAX_VALUE;
+            return sortableTime(startTime);
         } catch (NullPointerException ex) {
             return Double.MIN_VALUE;
         }
@@ -111,12 +91,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
     public double getEndTime() {
         try {
             ageOfJVMAtLogEnd();
-            if ( endTime.hasTimeStamp())
-                return endTime.getTimeStamp();
-            else if ( endTime.hasDateStamp())
-                return endTime.toEpochInMillis();
-            else
-                return Double.MAX_VALUE;
+            return sortableTime(endTime);
         } catch (NullPointerException ex) {
             return Double.MIN_VALUE;
         }
@@ -128,13 +103,21 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return GCLogSources.streamZipEntry(path, segmentName);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.WARNING, e, () -> "Unable to stream log segment " + segmentName + " from " + path);
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static double sortableTime(DateTimeStamp dateTimeStamp) {
+        if (dateTimeStamp.hasTimeStamp()) {
+            return dateTimeStamp.toSeconds();
+        }
+        if (dateTimeStamp.hasDateStamp()) {
+            return dateTimeStamp.toEpochInMillis();
+        }
+        return Double.MAX_VALUE;
     }
 
     /**
