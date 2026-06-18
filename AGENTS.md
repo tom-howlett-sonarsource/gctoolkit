@@ -1,4 +1,7 @@
-
+# General principles
+* When generating code prioritise security, reliability and maintainability. This code will need to be maintained for many years and will be used by 10000s of developers. 
+* Do not add unecessary code, remove any code that is not used, avoid duplication, extract common functionality
+* Follow existing design patterns unless instructed not to
 
 <!-- sonar:begin:sonarqube-agentic-analysis-protocol -->
 # SonarQube Agentic Analysis protocol
