@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.source.GCLogSource;
+
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,8 +13,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
 
@@ -32,11 +31,11 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     public Stream<LogFileSegment> logFiles() {
         if ( segments == null) {
-            if ( isPlainText() || isDirectory())
+            if (isPlainText() || isDirectory()) {
                 findSegments();
-            else if ( isZip())
+            } else if (isZip()) {
                 findZIPSegments();
-            else {
+            } else {
                 LOG.warning("unknown log file format");
                 segments = new ArrayList<>();
             }
@@ -45,11 +44,9 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
-                    .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
+        try {
+            segments = GCLogSource.zipEntryNames(getPath()).stream()
+                    .map(name -> new GCLogFileZipSegment(getPath(), name))
                     .collect(toList());
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
@@ -63,12 +60,14 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
      * @return The number of files in the file.
      */
     public int getNumberOfFiles() {
-        if ( this.segments == null)
-            if ( isZip())
+        if (this.segments == null) {
+            if (isZip()) {
                 findZIPSegments();
-            else
+            } else {
                 findSegments();
-            return this.segments.size();
+            }
+        }
+        return this.segments.size();
     }
 
     /**
@@ -90,45 +89,15 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
         // at this point we only have the path, not a segment... it maybe that we have to save the chosen segment
         // so  that we can normalize the code path for zip and file based logs????
-        String[] bits;
-        if (isDirectory()) {
-            // if base is gc.log, filter out gc.log.<number>
-            bits = segments.stream()
-                    .filter(segment -> !segment.getSegmentName().matches(".+\\.\\d+$"))
-                    .findFirst()
-                    .get()
-                    .getSegmentName().split("\\.");
-        } else if ( isZip()) {
-            bits = segments.get(0).getSegmentName().split("\\.");
-        } else {
-            bits = getPath().getFileName().toString().split("\\.");
-        }
-
-        int baseLength = 0;
-        if ( "current".equals(bits[bits.length - 1]))
-            baseLength = bits.length - 2;
-        else if ( bits[bits.length - 1].matches("\\d+$"))
-            baseLength = bits.length - 1;
-        else
-            baseLength = bits.length;
-
-        StringBuilder base = new StringBuilder(bits[0]);
-        for ( int i = 1; i < baseLength; i++)
-            base.append(".").append(bits[i]);
-        return base.toString();
+        return GCLogSource.rootPattern(segmentNames(), getPath(), getFileFormat());
     }
 
     private void findSegments() {
         segments = new ArrayList<>();
         try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+            GCLogSource.discoverSegments(getPath(), getFileFormat(), getRootPattern()).stream()
+                    .map(GCLogFileSegment::new)
+                    .forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
@@ -147,14 +116,15 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         String basePattern = getRootPattern();
         LogFileSegment current = workingList.stream()
                 .filter( segment -> segment.getSegmentName().endsWith(basePattern) || segment.getSegmentName().endsWith(".current"))
-                .findFirst().get();
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No current log segment found"));
 
         orderedList.addLast(current);
         workingList = removeIneligibleSegments (workingList, current);
         while ( ! workingList.isEmpty()) {
             current = workingList.stream()
                     .max(Comparator.comparing(LogFileSegment::getEndTime))
-                    .get();
+                    .orElseThrow(() -> new IllegalStateException("No eligible log segment found"));
             orderedList.addFirst(current);
             workingList = removeIneligibleSegments (workingList, current);
         }
@@ -164,6 +134,12 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private List<LogFileSegment> removeIneligibleSegments(final List<LogFileSegment> logFileSegments, final LogFileSegment current) {
         return logFileSegments.stream()
                 .filter( segment -> segment.getEndTime() <= current.getStartTime())
+                .collect(toList());
+    }
+
+    private List<String> segmentNames() {
+        return segments.stream()
+                .map(LogFileSegment::getSegmentName)
                 .collect(toList());
     }
 }
