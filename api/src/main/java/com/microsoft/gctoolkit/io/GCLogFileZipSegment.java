@@ -29,6 +29,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private final Path path;
     private final String segmentName;
+    private final long byteSize;
     private DateTimeStamp endTime = null;
     private DateTimeStamp startTime = null;
 
@@ -40,6 +41,13 @@ public class GCLogFileZipSegment implements LogFileSegment {
     public GCLogFileZipSegment(Path path, String segmentName) {
         this.path = path;
         this.segmentName = segmentName;
+        this.byteSize = 0L;
+    }
+
+    public GCLogFileZipSegment(Path path, String segmentName, long byteSize) {
+        this.path = path;
+        this.segmentName = segmentName;
+        this.byteSize = Math.max(byteSize, 0L);
     }
 
     /**
@@ -135,6 +143,11 @@ public class GCLogFileZipSegment implements LogFileSegment {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    @Override
+    public long getByteSize() {
+        return byteSize;
     }
 
     /**
