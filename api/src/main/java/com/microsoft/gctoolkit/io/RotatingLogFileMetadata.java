@@ -96,7 +96,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             bits = segments.stream()
                     .filter(segment -> !segment.getSegmentName().matches(".+\\.\\d+$"))
                     .findFirst()
-                    .get()
+                    .orElseThrow(() -> new java.util.NoSuchElementException("No log file segment found without numeric suffix"))
                     .getSegmentName().split("\\.");
         } else if ( isZip()) {
             bits = segments.get(0).getSegmentName().split("\\.");
