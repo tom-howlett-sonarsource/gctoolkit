@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".codex/hooks/sonar-sqaa/build-scripts/posttool-sqaa.sh",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }
