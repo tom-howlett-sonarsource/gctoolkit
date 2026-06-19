@@ -3,20 +3,14 @@
 package com.microsoft.gctoolkit.io;
 
 import com.microsoft.gctoolkit.time.DateTimeStamp;
+import com.microsoft.gctoolkit.shared.io.LogSourceStreams;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.List;
-import java.util.stream.Collector;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -68,7 +62,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
             List<String> tail = stream().
-                    collect(tail(100));
+                    collect(LogSourceStreams.tail(100));
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -77,19 +71,6 @@ public class GCLogFileZipSegment implements LogFileSegment {
                     .orElse(DateTimeStamp.EMPTY_DATE);
         }
         return endTime;
-    }
-
-    public <T> Collector<T, ?, List<T>> tail(int n) {
-        return Collector.<T, Deque<T>, List<T>>of(ArrayDeque::new, (buffer, line) -> {
-            if(buffer.size() == n)
-                buffer.pollFirst();
-            buffer.add(line);
-        }, (buffer, list) -> {
-            while(list.size() < n && !buffer.isEmpty()) {
-                list.addFirst(buffer.pollLast());
-            }
-            return list;
-        }, ArrayList::new);
     }
 
     @Override
@@ -128,9 +109,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return LogSourceStreams.streamZipEntry(path, segmentName);
         } catch (IOException e) {
             e.printStackTrace();
         }

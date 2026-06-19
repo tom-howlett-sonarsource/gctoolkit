@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
@@ -163,7 +162,7 @@ public class GCLogFileSegment implements LogFileSegment {
      // https://codereview.stackexchange.com/questions/79039/get-the-tail-of-a-file-the-last-10-lines
      // Tail is not a class, it's a method so the solution in stackoverflow isn't correct but the core
      // could be used here as it's cleaner
-    private ArrayList<String> tail(int numberOfLines) throws IOException {
+    private java.util.List<String> tail(int numberOfLines) throws IOException {
 
         char LF = '\n';
         char CR = '\r';
@@ -199,7 +198,7 @@ public class GCLogFileSegment implements LogFileSegment {
                 linesFound++;
         }
 
-        ArrayList<String> lines = new ArrayList<>();
+        java.util.List<String> lines = new java.util.ArrayList<>();
         if (linesFound > 0) {
             String line;
             while ((line = randomAccessFile.readLine()) != null) {
