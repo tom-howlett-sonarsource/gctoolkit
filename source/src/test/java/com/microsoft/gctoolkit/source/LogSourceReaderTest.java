@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static java.util.stream.Collectors.toList;
 
-public class LogSourceReaderTest {
+class LogSourceReaderTest {
 
     private static final String FIRST_LINE = "first";
     private static final String SECOND_LINE = "second";

@@ -40,7 +40,7 @@ public final class LogSourceReader {
         return stream(metadata)
                 .filter(Objects::nonNull)
                 .map(String::trim)
-                .filter(line -> line.length() > 0);
+                .filter(line -> !line.isEmpty());
     }
 
     public static Stream<String> streamZipEntry(Path path, String entryName) throws IOException {

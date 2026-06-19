@@ -16,7 +16,7 @@ import java.util.zip.ZipOutputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static java.util.stream.Collectors.toList;
 
-public class LogSourceSegmentsTest {
+class LogSourceSegmentsTest {
 
     private static final String LOG_FILE_NAME = "gc.log";
     private static final String FIRST_SEGMENT_NAME = "gc.log.0";
