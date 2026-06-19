@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.source.LogSourceSegments;
+
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,8 +13,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
 
@@ -45,10 +44,8 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
-                    .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
+        try {
+            segments = LogSourceSegments.listZipEntries(getPath()).stream()
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
                     .collect(toList());
         } catch (IOException ioe) {
@@ -63,12 +60,14 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
      * @return The number of files in the file.
      */
     public int getNumberOfFiles() {
-        if ( this.segments == null)
-            if ( isZip())
+        if (this.segments == null) {
+            if (isZip()) {
                 findZIPSegments();
-            else
+            } else {
                 findSegments();
-            return this.segments.size();
+            }
+        }
+        return this.segments.size();
     }
 
     /**
@@ -96,7 +95,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             bits = segments.stream()
                     .filter(segment -> !segment.getSegmentName().matches(".+\\.\\d+$"))
                     .findFirst()
-                    .get()
+                    .orElseThrow()
                     .getSegmentName().split("\\.");
         } else if ( isZip()) {
             bits = segments.get(0).getSegmentName().split("\\.");
@@ -122,10 +121,10 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                LogSourceSegments.listDirectory(getPath()).stream().map(GCLogFileSegment::new).forEach(segments::add);
             }
             else {
-                Files.list(getPath().getParent())
+                LogSourceSegments.listDirectory(getPath().getParent()).stream()
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
                         .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
             }
@@ -147,14 +146,15 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         String basePattern = getRootPattern();
         LogFileSegment current = workingList.stream()
                 .filter( segment -> segment.getSegmentName().endsWith(basePattern) || segment.getSegmentName().endsWith(".current"))
-                .findFirst().get();
+                .findFirst()
+                .orElseThrow();
 
         orderedList.addLast(current);
         workingList = removeIneligibleSegments (workingList, current);
         while ( ! workingList.isEmpty()) {
             current = workingList.stream()
                     .max(Comparator.comparing(LogFileSegment::getEndTime))
-                    .get();
+                    .orElseThrow();
             orderedList.addFirst(current);
             workingList = removeIneligibleSegments (workingList, current);
         }
