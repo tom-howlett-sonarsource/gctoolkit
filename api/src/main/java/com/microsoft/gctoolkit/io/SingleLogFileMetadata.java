@@ -5,15 +5,12 @@ package com.microsoft.gctoolkit.io;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 /**
  * Meta-data about a {@link FileDataSource}.
  */
 public class SingleLogFileMetadata extends LogFileMetadata {
-
-    private static final Logger LOG = Logger.getLogger(SingleLogFileMetadata.class.getName());
 
     private LogFileSegment logFile;
 
