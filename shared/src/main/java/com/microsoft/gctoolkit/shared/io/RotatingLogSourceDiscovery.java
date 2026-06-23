@@ -100,7 +100,7 @@ public final class RotatingLogSourceDiscovery {
         while (!workingList.isEmpty()) {
             current = workingList.stream()
                     .max(Comparator.comparing(LogSourceSegment::getEndTime))
-                    .get();
+                    .orElseThrow();
             orderedList.addFirst(current);
             workingList = removeIneligibleSegments(workingList, current);
         }
