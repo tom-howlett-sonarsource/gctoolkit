@@ -14,6 +14,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
@@ -41,37 +42,43 @@ public final class LogSourceStreams {
     }
 
     public static Stream<String> streamFirstZipEntry(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
+        try (ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path))) {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
 
-        if (entry == null) {
-            zipStream.close();
-            throw new IOException("No file entries found in " + path);
+            if (entry == null) {
+                throw new IOException("No file entries found in " + path);
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)))) {
+                List<String> lines = reader.lines().collect(Collectors.toList());
+                return lines.stream();
+            }
         }
-
-        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
-        return reader.lines().onClose(() -> close(reader));
     }
 
     public static Stream<String> streamZipEntry(Path path, String entryName) throws IOException {
-        ZipFile file = new ZipFile(path.toFile());
-        ZipEntry entry = file.getEntry(entryName);
-        if (entry == null) {
-            file.close();
-            throw new IOException("Zip entry " + entryName + " not found in " + path);
-        }
+        try (ZipFile file = new ZipFile(path.toFile())) {
+            ZipEntry entry = file.getEntry(entryName);
+            if (entry == null) {
+                throw new IOException("Zip entry " + entryName + " not found in " + path);
+            }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
-        return reader.lines().onClose(() -> close(reader, file));
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)))) {
+                List<String> lines = reader.lines().collect(Collectors.toList());
+                return lines.stream();
+            }
+        }
     }
 
     public static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
-        return reader.lines().onClose(() -> close(reader));
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new BufferedInputStream(new GZIPInputStream(Files.newInputStream(path)))))) {
+            List<String> lines = reader.lines().collect(Collectors.toList());
+            return lines.stream();
+        }
     }
 
     public static Stream<String> normalized(Stream<String> stream) {
@@ -79,7 +86,7 @@ public final class LogSourceStreams {
                 .filter(Objects::nonNull)
                 .filter(line -> !line.isBlank())
                 .map(String::trim)
-                .filter(line -> line.length() > 0);
+                .filter(line -> !line.isEmpty());
     }
 
     public static <T> Collector<T, ?, List<T>> tail(int n) {
