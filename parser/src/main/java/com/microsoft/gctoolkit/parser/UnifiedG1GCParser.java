@@ -518,21 +518,21 @@ public class UnifiedG1GCParser extends UnifiedGCLogParser implements UnifiedG1GC
         forwardReference.setDuration(trace.getDurationInSeconds());
 
         // Handling -Xlog:gc logs (#372)
-    	// If the GC log was generated using -Xlog:gc instead of -Xlog:gc*, there won't be a CPU breakout
+        // If the GC log was generated using -Xlog:gc instead of -Xlog:gc*, there won't be a CPU breakout
         // line that will publish the event.  (cpuBreakout() above)
 
         // If we haven't spotted a CPU decorator in the diarizer, we should be able to publish this line 
         // after filling in the missing info.
-    	if (forwardReference.getGcType() == null && !diary.isPrintCPUTimes()) {
-    		forwardReference.setGcType(GarbageCollectionTypes.Young);
-    		forwardReference.setGCCause(trace.gcCause(-2));
-    		forwardReference.setStartTime(getClock());
+        if (forwardReference.getGcType() == null && !diary.isPrintCPUTimes()) {
+            forwardReference.setGcType(GarbageCollectionTypes.Young);
+            forwardReference.setGCCause(trace.gcCause(-2));
+            forwardReference.setStartTime(getClock());
             try {
                 publishPauseEvent(forwardReference.buildEvent());
             } catch (MalformedEvent malformedEvent) {
                 LOGGER.warning(malformedEvent.getMessage());
             }
-    	}
+        }
     }
 
     /**
@@ -790,7 +790,7 @@ public class UnifiedG1GCParser extends UnifiedGCLogParser implements UnifiedG1GC
     private void log(String line) {
         if ( ! ignoreFrequentlySeenButUnwantedLines(line)) {
 
-            GCToolKit.LOG_DEBUG_MESSAGE(() -> "Missed: " + line);
+            GCToolKit.logDebugMessage(() -> "Missed: " + line);
             LOGGER.log(Level.FINE, "Missed: {0}", line);
         }
     }
