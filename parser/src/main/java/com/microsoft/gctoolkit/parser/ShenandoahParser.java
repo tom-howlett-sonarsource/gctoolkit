@@ -91,7 +91,7 @@ public class ShenandoahParser extends UnifiedGCLogParser implements ShenandoahPa
     //Implement all capture methods
 
     private void log(String line) {
-        GCToolKit.LOG_DEBUG_MESSAGE(() -> "ZGCHeapParser missed: " + line);
+        GCToolKit.logDebugMessage(() -> "ZGCHeapParser missed: " + line);
         LOGGER.log(Level.WARNING, "Missed: {0}", line);
 
     }

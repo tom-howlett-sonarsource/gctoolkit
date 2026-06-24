@@ -290,7 +290,7 @@ public class GCLogTrace extends AbstractLogTrace {
         }
         LOGGER.fine("-----------------------------------------");
         //IntelliJ Eats this log output, so it's displayed to stdout
-        GCToolKit.LOG_DEBUG_MESSAGE(() -> {
+        GCToolKit.logDebugMessage(() -> {
             StringBuilder debugMessage = new StringBuilder();
             debugMessage.append(threadName).append(", not implemented: ").append(getGroup(0)).append(System.lineSeparator());
             for (int i = 1; i < groupCount() + 1; i++) {
