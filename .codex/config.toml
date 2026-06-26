@@ -1,8 +1,1 @@
 sandbox_mode = "workspace-write"
-
-[sandbox_workspace_write]
-writable_roots = [ "/Users/Tom.Howlett/.sonar" ]
-
-[mcp_servers.sonarqube]
-command = "sonar"
-args = [ "run", "mcp", "--project", "tom-howlett-sonarsource_gctoolkit" ]
