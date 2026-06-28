@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.event;
 
+import com.microsoft.gctoolkit.aggregator.Aggregation;
 import com.microsoft.gctoolkit.event.jvm.JVMEvent;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
@@ -76,6 +77,14 @@ public abstract class GCEvent extends JVMEvent {
      */
     public GCCause getGCCause() {
         return this.cause;
+    }
+
+    /**
+     * Record this event in the given aggregation.
+     * @param aggregation the aggregation to record this event in
+     */
+    public void recordIn(Aggregation aggregation) {
+        aggregation.updateEventFrequency(this);
     }
 
     /**
