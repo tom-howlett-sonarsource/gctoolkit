@@ -16,6 +16,10 @@
     <dependencies>
         <dependency>
             <groupId>com.microsoft.gctoolkit</groupId>
+            <artifactId>gctoolkit-source-utils</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.gctoolkit</groupId>
             <artifactId>gctoolkit-api</artifactId>
         </dependency>
         <dependency>
