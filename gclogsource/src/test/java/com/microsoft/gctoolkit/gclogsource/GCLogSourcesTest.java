@@ -16,13 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class GCLogSourcesTest {
 
+    private static final String GC_LOG = "gc.log";
+
     @TempDir
     private Path tempDir;
 
     @Test
     void listsRegularFilesInDirectory() throws IOException {
         Path directory = Files.createDirectory(tempDir.resolve("discovery"));
-        Path file = Files.createFile(directory.resolve("gc.log"));
+        Path file = Files.createFile(directory.resolve(GC_LOG));
         Files.createDirectory(directory.resolve("nested"));
 
         assertEquals(List.of(file), GCLogSources.filesIn(directory));
@@ -31,11 +33,11 @@ class GCLogSourcesTest {
     @Test
     void listsSiblingFilesByRootPattern() throws IOException {
         Path directory = Files.createDirectory(tempDir.resolve("siblings"));
-        Path first = Files.createFile(directory.resolve("gc.log"));
+        Path first = Files.createFile(directory.resolve(GC_LOG));
         Path second = Files.createFile(directory.resolve("gc.log.0"));
         Files.createFile(directory.resolve("other.log"));
 
-        assertEquals(List.of(first, second), GCLogSources.siblingFilesStartingWith(first, "gc.log"));
+        assertEquals(List.of(first, second), GCLogSources.siblingFilesStartingWith(first, GC_LOG));
     }
 
     @Test
@@ -44,12 +46,12 @@ class GCLogSourcesTest {
         try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(file))) {
             outputStream.putNextEntry(new ZipEntry("directory/"));
             outputStream.closeEntry();
-            writeEntry(outputStream, "gc.log", "line");
+            writeEntry(outputStream, GC_LOG, "line");
             writeEntry(outputStream, "__MACOSX/._gc.log", "metadata");
             writeEntry(outputStream, "__MACOSX/directory/._gc.log.0", "metadata");
         }
 
-        assertEquals(List.of("gc.log"), GCLogSources.zipEntryNames(file));
+        assertEquals(List.of(GC_LOG), GCLogSources.zipEntryNames(file));
     }
 
     private static void writeEntry(ZipOutputStream outputStream, String name, String content) throws IOException {
