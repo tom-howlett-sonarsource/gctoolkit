@@ -29,6 +29,7 @@ class LogSourceTest {
     private static final String GC_LOG_1_CURRENT = "gc.log.1.current";
     private static final String TWO_LINE_LOG = FIRST + "\n" + SECOND + "\n";
     private static final String FOUR = "four";
+    private static final String UNUSED = "unused";
     private static final int LARGE_SINGLE_LINE_LENGTH = (1024 * 1024) + 1;
 
     @TempDir
@@ -72,7 +73,7 @@ class LogSourceTest {
         Files.writeString(directory.resolve(GC_LOG_1_CURRENT), "1");
         Files.writeString(directory.resolve(GC_LOG), "2");
         Path sibling = directory.resolve(GC_LOG);
-        Path zip = zip("segments.zip", GC_LOG_0, "0", GC_LOG_1_CURRENT, "1");
+        Path zip = zip("segments.zip", GC_LOG_0, "0", GC_LOG_1_CURRENT, "1", "__MACOSX/._gc.log.0", "metadata");
 
         assertEquals(
                 List.of(GC_LOG, GC_LOG_0, GC_LOG_1_CURRENT),
@@ -142,14 +143,22 @@ class LogSourceTest {
     }
 
     private Path zip(String fileName, String entryName, String content) throws IOException {
-        return zip(fileName, entryName, content, "unused.log", "unused");
+        return zip(fileName, entryName, content, "unused.log", UNUSED, "unused-2.log", UNUSED);
     }
 
-    private Path zip(String fileName, String firstEntry, String firstContent, String secondEntry, String secondContent) throws IOException {
+    private Path zip(
+            String fileName,
+            String firstEntry,
+            String firstContent,
+            String secondEntry,
+            String secondContent,
+            String thirdEntry,
+            String thirdContent) throws IOException {
         Path path = tempDir.resolve(fileName);
         try (var outputStream = new ZipOutputStream(Files.newOutputStream(path))) {
             writeZipEntry(outputStream, firstEntry, firstContent);
             writeZipEntry(outputStream, secondEntry, secondContent);
+            writeZipEntry(outputStream, thirdEntry, thirdContent);
         }
         return path;
     }

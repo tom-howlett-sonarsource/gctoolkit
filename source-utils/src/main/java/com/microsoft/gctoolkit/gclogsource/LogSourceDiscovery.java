@@ -49,9 +49,16 @@ public final class LogSourceDiscovery {
             return zipFile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
+                    .filter(LogSourceDiscovery::isSourceEntry)
                     .sorted()
                     .collect(Collectors.toList());
         }
+    }
+
+    private static boolean isSourceEntry(String name) {
+        int separator = name.lastIndexOf('/');
+        String fileName = separator == -1 ? name : name.substring(separator + 1);
+        return !name.startsWith("__MACOSX/") && !fileName.startsWith("._");
     }
 
     public static String rootPattern(Path path, LogSourceFormat format, List<String> segmentNames) {
