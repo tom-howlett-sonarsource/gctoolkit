@@ -16,6 +16,8 @@ import java.util.stream.Collector;
  */
 public final class LogSourceTail {
 
+    private static final int MAX_TAIL_BYTES = 1024 * 1024;
+
     private LogSourceTail() {
     }
 
@@ -54,6 +56,7 @@ public final class LogSourceTail {
         if (!endOfLine.found || currentPosition == 0) {
             randomAccessFile.seek(0);
         }
+        skipToBoundedTailWindow(randomAccessFile);
 
         List<String> lines = new ArrayList<>();
         String line;
@@ -61,6 +64,18 @@ public final class LogSourceTail {
             lines.add(line);
         }
         return lines;
+    }
+
+    private static void skipToBoundedTailWindow(RandomAccessFile randomAccessFile) throws IOException {
+        long tailStart = Math.max(0, randomAccessFile.length() - MAX_TAIL_BYTES);
+        if (randomAccessFile.getFilePointer() >= tailStart) {
+            return;
+        }
+
+        randomAccessFile.seek(tailStart);
+        if (tailStart > 0) {
+            randomAccessFile.readLine();
+        }
     }
 
     private static EndOfLine findEndOfLine(RandomAccessFile randomAccessFile) throws IOException {

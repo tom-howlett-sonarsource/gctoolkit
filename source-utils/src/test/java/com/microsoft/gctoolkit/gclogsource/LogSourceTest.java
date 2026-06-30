@@ -29,6 +29,7 @@ class LogSourceTest {
     private static final String GC_LOG_1_CURRENT = "gc.log.1.current";
     private static final String TWO_LINE_LOG = FIRST + "\n" + SECOND + "\n";
     private static final String FOUR = "four";
+    private static final int LARGE_SINGLE_LINE_LENGTH = (1024 * 1024) + 1;
 
     @TempDir
     private Path tempDir;
@@ -117,6 +118,13 @@ class LogSourceTest {
 
         assertEquals(List.of("one"), LogSourceTail.readLastLines(singleLine, 5));
         assertEquals(List.of("two", THREE), LogSourceTail.readLastLines(carriageReturn, 2));
+    }
+
+    @Test
+    void doesNotLoadLargeFileWithoutLineEndingsIntoTail() throws IOException {
+        Path largeSingleLine = write("large-single-line.log", "a".repeat(LARGE_SINGLE_LINE_LENGTH));
+
+        assertEquals(List.of(), LogSourceTail.readLastLines(largeSingleLine, 5));
     }
 
     private Path write(String fileName, String content) throws IOException {
