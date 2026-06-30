@@ -68,8 +68,15 @@ public final class GCLogSources {
             return zipFile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
+                    .filter(GCLogSources::isSourceEntry)
                     .sorted()
                     .collect(Collectors.toList());
         }
+    }
+
+    private static boolean isSourceEntry(String name) {
+        int separator = name.lastIndexOf('/');
+        String fileName = separator == -1 ? name : name.substring(separator + 1);
+        return !name.startsWith("__MACOSX/") && !fileName.startsWith("._");
     }
 }
