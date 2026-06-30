@@ -89,6 +89,7 @@
 
     <modules>
         <module>gclogs</module>
+        <module>gclogsource</module>
         <module>api</module>
         <module>parser</module>
         <module>vertx</module>
@@ -110,6 +111,11 @@
             <dependency>
                 <groupId>com.microsoft.gctoolkit</groupId>
                 <artifactId>gctoolkit-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.gctoolkit</groupId>
+                <artifactId>gctoolkit-gclogsource</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -291,6 +297,9 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire-plugin.version}</version>
+                    <configuration>
+                        <argLine>@{argLine} -Xmx2g</argLine>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
