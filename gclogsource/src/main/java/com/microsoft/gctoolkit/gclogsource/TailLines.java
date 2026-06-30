@@ -16,6 +16,8 @@ import java.util.stream.Collector;
  */
 public final class TailLines {
 
+    private static final int MAX_TAIL_BYTES = 1024 * 1024;
+
     private TailLines() {
     }
 
@@ -71,12 +73,25 @@ public final class TailLines {
 
             ArrayList<String> lines = new ArrayList<>();
             if (linesFound > 0) {
+                skipToBoundedTailWindow(randomAccessFile);
                 String line;
                 while ((line = randomAccessFile.readLine()) != null) {
                     lines.add(line);
                 }
             }
             return lines;
+        }
+    }
+
+    private static void skipToBoundedTailWindow(RandomAccessFile randomAccessFile) throws IOException {
+        long tailStart = Math.max(0, randomAccessFile.length() - MAX_TAIL_BYTES);
+        if (randomAccessFile.getFilePointer() >= tailStart) {
+            return;
+        }
+
+        randomAccessFile.seek(tailStart);
+        if (tailStart > 0) {
+            randomAccessFile.readLine();
         }
     }
 
