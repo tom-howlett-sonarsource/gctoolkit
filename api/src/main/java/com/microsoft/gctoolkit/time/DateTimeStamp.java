@@ -69,9 +69,9 @@ public class DateTimeStamp implements Comparable<DateTimeStamp> {
     private static final String UPTIME_TAG = "\\[(" + TIME + ")s]";
 
     // Pre-unified tokens
-    private static final String TIMESTAMP = "(" + TIME + "): ";
+    private static final String TIMESTAMP_REGEX = "(" + TIME + "): ";
     private static final String DATE_STAMP = "(" + DATE + "): ";
-    private static final String DATE_TIMESTAMP = "^(?:" + DATE_STAMP + ")?" + TIMESTAMP;
+    private static final String DATE_TIMESTAMP = "^(?:" + DATE_STAMP + ")?" + TIMESTAMP_REGEX;
 
     //  2017-09-07T09:00:12.795+0200: 0.716:
     private static final Pattern PREUNIFIED_DATE_TIMESTAMP = Pattern.compile(DATE_TIMESTAMP);
