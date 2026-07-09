@@ -385,7 +385,7 @@ public class Diary {
     }
 
     public boolean isPrintCPUTimes() {
-    	return isStateKnown(SupportedFlags.PRINT_CPU_TIMES);
+        return isStateKnown(SupportedFlags.PRINT_CPU_TIMES);
     }
     
     public void setTimeOfFirstEvent(DateTimeStamp startTime) {
@@ -412,7 +412,7 @@ public class Diary {
     TENURED;
  */
     private void evaluate(Set<EventSource> events, SupportedFlags flag, EventSource eventSource) {
-        if ( isStateKnown(flag) & isTrue(flag))
+        if ( isStateKnown(flag) && isTrue(flag))
             events.add(eventSource);
     }
     public Set<EventSource> generatesEvents() {
