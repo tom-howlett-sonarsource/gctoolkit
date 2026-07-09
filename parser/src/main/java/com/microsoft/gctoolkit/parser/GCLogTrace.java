@@ -139,9 +139,11 @@ public class GCLogTrace extends AbstractLogTrace {
         double returnValue = value;
         switch (Character.toUpperCase(units.codePointAt(0))) {
             case 'G':
-                returnValue *= 1024.0D;
+                returnValue *= 1024.0D * 1024.0D;
+                break;
             case 'M':
                 returnValue *= 1024.0D;
+                break;
             case 'K':
                 break;
             case 'B':
@@ -157,9 +159,11 @@ public class GCLogTrace extends AbstractLogTrace {
         long returnValue = value;
         switch (Character.toUpperCase(units.codePointAt(0))) {
             case 'G':
-                returnValue *= 1024L;
+                returnValue *= 1024L * 1024L;
+                break;
             case 'M':
                 returnValue *= 1024L;
+                break;
             case 'K':
                 break;
             case 'B':
