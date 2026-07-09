@@ -13,7 +13,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -26,6 +29,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOGGER = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -127,14 +132,16 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
-        try {
-            ZipFile file = new ZipFile(path.toFile());
+        try (ZipFile file = new ZipFile(path.toFile())) {
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            List<String> lines = new BufferedReader(new InputStreamReader(file.getInputStream(entry)))
+                    .lines()
+                    .collect(Collectors.toList());
+            return lines.stream();
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.WARNING, "Error reading zip segment", e);
         }
-        return new ArrayList<String>().stream();
+        return Stream.empty();
     }
 
     /**
