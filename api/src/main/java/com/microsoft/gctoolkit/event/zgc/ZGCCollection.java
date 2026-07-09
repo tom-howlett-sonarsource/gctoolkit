@@ -497,7 +497,7 @@ public class ZGCCollection extends GCEvent {
         return load;
     }
 
-    public double[] getMmu() {
+    public double[] getMMU() {
         return mmu;
     }
 
