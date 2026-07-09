@@ -360,8 +360,6 @@ public class UnifiedG1GCParser extends UnifiedGCLogParser implements UnifiedG1GC
             gcType = fromLabel(trace.getGroup(1));
         else {
             switch (gcSubtype) {
-                default:
-                    LOGGER.warning("GC Type not recognized: " + line);
                 case "Prepare Mixed":
                 case "Normal":
                     gcType = fromLabel(trace.getGroup(1));
@@ -372,6 +370,10 @@ public class UnifiedG1GCParser extends UnifiedGCLogParser implements UnifiedG1GC
                 case "Concurrent End":
                 case "Concurrent Start":
                     gcType = GarbageCollectionTypes.Initial_Mark;
+                    break;
+                default:
+                    LOGGER.warning("GC Type not recognized: " + line);
+                    gcType = fromLabel(trace.getGroup(1));
                     break;
             }
         }
@@ -518,21 +520,21 @@ public class UnifiedG1GCParser extends UnifiedGCLogParser implements UnifiedG1GC
         forwardReference.setDuration(trace.getDurationInSeconds());
 
         // Handling -Xlog:gc logs (#372)
-    	// If the GC log was generated using -Xlog:gc instead of -Xlog:gc*, there won't be a CPU breakout
+        // If the GC log was generated using -Xlog:gc instead of -Xlog:gc*, there won't be a CPU breakout
         // line that will publish the event.  (cpuBreakout() above)
 
         // If we haven't spotted a CPU decorator in the diarizer, we should be able to publish this line 
         // after filling in the missing info.
-    	if (forwardReference.getGcType() == null && !diary.isPrintCPUTimes()) {
-    		forwardReference.setGcType(GarbageCollectionTypes.Young);
-    		forwardReference.setGCCause(trace.gcCause(-2));
-    		forwardReference.setStartTime(getClock());
+        if (forwardReference.getGcType() == null && !diary.isPrintCPUTimes()) {
+            forwardReference.setGcType(GarbageCollectionTypes.Young);
+            forwardReference.setGCCause(trace.gcCause(-2));
+            forwardReference.setStartTime(getClock());
             try {
                 publishPauseEvent(forwardReference.buildEvent());
             } catch (MalformedEvent malformedEvent) {
                 LOGGER.warning(malformedEvent.getMessage());
             }
-    	}
+        }
     }
 
     /**
