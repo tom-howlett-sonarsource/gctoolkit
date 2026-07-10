@@ -3,11 +3,11 @@
 package com.microsoft.gctoolkit.vertx;
 
 import com.microsoft.gctoolkit.io.GCLogFile;
-import com.microsoft.gctoolkit.message.DataSourceChannelListener;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -25,16 +25,16 @@ public class DataSourceVerticle extends AbstractVerticle {
     final private String inbox;
     // ID of the verticle.
     private String id;
-    // Listener for processing data source messages.
-    final private DataSourceChannelListener processor;
+    // Consumer for processing data source messages.
+    final private Consumer<String> processor;
 
     /**
      * Constructor for DataSourceVerticle.
      * @param vertx the Vert.x instance.
      * @param channelName the name of the channel.
-     * @param listener the listener for processing data source messages.
+     * @param listener the consumer for processing data source messages.
      */
-    public DataSourceVerticle(Vertx vertx, String channelName, DataSourceChannelListener listener) {
+    public DataSourceVerticle(Vertx vertx, String channelName, Consumer<String> listener) {
         this.vertx = vertx;
         this.inbox = channelName;
         this.processor = listener;
@@ -56,7 +56,7 @@ public class DataSourceVerticle extends AbstractVerticle {
     public void start(Promise<Void> promise) {
         try {
             vertx.eventBus().<String>consumer(inbox, message -> {
-                processor.receive(message.body());
+                processor.accept(message.body());
                 if (GCLogFile.END_OF_DATA_SENTINEL.equals(message.body())) {
                     vertx.undeploy(id);
                 }
