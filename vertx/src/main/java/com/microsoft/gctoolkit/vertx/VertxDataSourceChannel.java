@@ -4,7 +4,7 @@ package com.microsoft.gctoolkit.vertx;
 
 import com.microsoft.gctoolkit.message.ChannelName;
 import com.microsoft.gctoolkit.message.DataSourceChannel;
-import com.microsoft.gctoolkit.message.DataSourceParser;
+import com.microsoft.gctoolkit.message.DataSourceChannelListener;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -23,11 +23,11 @@ public class VertxDataSourceChannel extends VertxChannel implements DataSourceCh
 
     /**
      * Registers a listener for the data source channel.
-     * @param listener the DataSourceParser listener to register.
+     * @param listener the DataSourceChannelListener listener to register.
      */
     @Override
-    public void registerListener(DataSourceParser listener) {
-        final DataSourceVerticle processor = new DataSourceVerticle(vertx(), listener.channel().getName(), listener);
+    public void registerListener(DataSourceChannelListener listener) {
+        final DataSourceVerticle processor = new DataSourceVerticle(vertx(), listener.channel().getName(), listener::receive);
         CountDownLatch latch = new CountDownLatch(1);
         vertx().deployVerticle(processor, state -> {
             processor.setID((state.succeeded()) ? state.result() : "");

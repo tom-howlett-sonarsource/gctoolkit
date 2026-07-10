@@ -4,7 +4,7 @@ package com.microsoft.gctoolkit.vertx;
 
 import com.microsoft.gctoolkit.event.jvm.JVMEvent;
 import com.microsoft.gctoolkit.event.jvm.JVMTermination;
-import com.microsoft.gctoolkit.message.JVMEventChannelListener;
+import com.microsoft.gctoolkit.message.ChannelListener;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -24,19 +24,18 @@ public class JVMEventVerticle extends AbstractVerticle {
     // Channel name for the inbox.
     final private String inbox;
     // Listener for processing JVM events.
-    final private JVMEventChannelListener processor;
+    final private ChannelListener<JVMEvent> processor;
     // ID of the verticle.
     private String id;
 
     /**
      * Constructor for JVMEventVerticle.
      * @param vertx the Vert.x instance.
-     * @param channelName the name of the channel.
      * @param listener the listener for processing JVM events.
      */
-    public JVMEventVerticle(Vertx vertx, String channelName, JVMEventChannelListener listener) {
+    public JVMEventVerticle(Vertx vertx, ChannelListener<JVMEvent> listener) {
         this.vertx = vertx;
-        this.inbox = channelName;
+        this.inbox = listener.channel().getName();
         this.processor = listener;
     }
 
