@@ -17,6 +17,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class SafepointLogFileTest {
 
@@ -55,7 +56,11 @@ class SafepointLogFileTest {
     }
 
     private List<String> stream(Path path) throws IOException {
-        try (Stream<String> lines = new SafepointLogFile(path).stream()) {
+        SafepointLogFile source = new SafepointLogFile(path);
+        assertEquals(path, source.getPath());
+        assertEquals("END_OF_DATA_SENTINEL", source.endOfData());
+        assertNotNull(source.diary());
+        try (Stream<String> lines = source.stream()) {
             return lines.collect(Collectors.toList());
         }
     }
