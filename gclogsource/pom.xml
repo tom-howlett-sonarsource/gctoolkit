@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -9,16 +9,12 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>gctoolkit-api</artifactId>
-    <name>GCToolKit API</name>
-    <description>Model APIs for aggregator, events, inputs.</description>
+    <artifactId>gctoolkit-gclogsource</artifactId>
+    <name>GCToolKit GC Log Source</name>
+    <description>Shared GC log source IO utilities.</description>
     <url>${project.parent.url}</url>
 
     <dependencies>
-        <dependency>
-            <groupId>com.microsoft.gctoolkit</groupId>
-            <artifactId>gctoolkit-gclogsource</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
