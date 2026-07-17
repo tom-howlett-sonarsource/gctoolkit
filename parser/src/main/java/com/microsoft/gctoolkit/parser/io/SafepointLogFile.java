@@ -6,6 +6,7 @@ import com.microsoft.gctoolkit.io.DataSource;
 import com.microsoft.gctoolkit.io.GCLogFile;
 import com.microsoft.gctoolkit.io.LogFileMetadata;
 import com.microsoft.gctoolkit.jvm.Diary;
+import com.microsoft.gctoolkit.source.GCLogSourceUtils;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -42,6 +43,14 @@ public class SafepointLogFile implements DataSource<String> {
     }
 
     public Path getPath() { return path; }
+
+    /**
+     * @return source size in bytes
+     * @throws IOException if the source cannot be sized
+     */
+    public long getSize() throws IOException {
+        return GCLogSourceUtils.size(path);
+    }
 
     public Stream<String> stream() throws IOException {
         if (metadata.isPlainText()) {

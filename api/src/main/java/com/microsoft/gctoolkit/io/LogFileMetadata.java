@@ -2,10 +2,13 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.source.GCLogSourceUtils;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -63,6 +66,15 @@ public abstract class LogFileMetadata {
      * @return The number of files in the file.
      */
     public abstract int getNumberOfFiles();
+
+    /**
+     * Return the total size of the files represented by this metadata.
+     * @return total size in bytes
+     * @throws IOException if a file cannot be sized
+     */
+    public long getSize() throws IOException {
+        return GCLogSourceUtils.size(logFiles().map(LogFileSegment::getPath).collect(Collectors.toList()));
+    }
 
     /**
      * {@code true} if the file is a Zip compressed file. 
