@@ -4,7 +4,7 @@ package com.microsoft.gctoolkit.parser.unittests;
 
 import com.microsoft.gctoolkit.parser.GCLogTrace;
 import com.microsoft.gctoolkit.parser.GCParseRule;
-import com.microsoft.gctoolkit.parser.diary.TestLogFile;
+import com.microsoft.gctoolkit.gclogs.TestLogFile;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 import org.junit.jupiter.api.Test;
 

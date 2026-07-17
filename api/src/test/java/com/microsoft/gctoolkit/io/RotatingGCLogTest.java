@@ -1,5 +1,7 @@
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.gclogs.TestLogFile;
+
 import org.junit.jupiter.api.Test;
 
 import java.io.File;

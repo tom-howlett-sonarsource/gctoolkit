@@ -9,7 +9,7 @@ import com.microsoft.gctoolkit.event.g1gc.G1Young;
 import com.microsoft.gctoolkit.event.jvm.JVMEvent;
 import com.microsoft.gctoolkit.event.jvm.SurvivorRecord;
 import com.microsoft.gctoolkit.jvm.Diarizer;
-import com.microsoft.gctoolkit.parser.diary.TestLogFile;
+import com.microsoft.gctoolkit.gclogs.TestLogFile;
 import com.microsoft.gctoolkit.parser.jvm.UnifiedDiarizer;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;

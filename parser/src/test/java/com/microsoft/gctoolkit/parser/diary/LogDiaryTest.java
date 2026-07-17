@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.parser.diary;
 
+import com.microsoft.gctoolkit.gclogs.TestLogFile;
+
 import com.microsoft.gctoolkit.io.GCLogFile;
 import com.microsoft.gctoolkit.io.SingleGCLogFile;
 import com.microsoft.gctoolkit.jvm.Diarizer;

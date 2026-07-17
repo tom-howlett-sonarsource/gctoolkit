@@ -16,6 +16,11 @@
     <dependencies>
         <dependency>
             <groupId>com.microsoft.gctoolkit</groupId>
+            <artifactId>gctoolkit-gclogs</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.gctoolkit</groupId>
             <artifactId>gctoolkit-api</artifactId>
         </dependency>
         <dependency>
