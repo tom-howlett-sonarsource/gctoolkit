@@ -2,14 +2,17 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.gclogsource.LogSourceFormat;
+import com.microsoft.gctoolkit.gclogsource.LogSourceIO;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
@@ -21,6 +24,8 @@ import java.util.stream.Stream;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileSegment implements LogFileSegment {
+
+    private static final Logger LOG = Logger.getLogger(GCLogFileSegment.class.getName());
 
     private final Path path;
     private final int segmentIndex;
@@ -112,11 +117,11 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogSourceIO.stream(path, LogSourceFormat.PLAINTEXT);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.log(Level.WARNING, "Unable to stream log segment.", e);
         }
-        return null;
+        return Stream.empty();
     }
 
     /**
