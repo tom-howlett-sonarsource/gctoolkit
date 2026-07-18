@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.source.GCLogSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -112,7 +112,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return GCLogSource.open(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
