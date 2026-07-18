@@ -6,19 +6,13 @@
         <groupId>com.microsoft.gctoolkit</groupId>
         <artifactId>gctoolkit</artifactId>
         <version>3.7.1-SNAPSHOT</version>
-        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>gctoolkit-api</artifactId>
-    <name>GCToolKit API</name>
-    <description>Model APIs for aggregator, events, inputs.</description>
-    <url>${project.parent.url}</url>
+    <artifactId>gctoolkit-io</artifactId>
+    <name>GCToolKit Shared IO</name>
+    <description>Shared GC log source utilities</description>
 
     <dependencies>
-        <dependency>
-            <groupId>com.microsoft.gctoolkit</groupId>
-            <artifactId>gctoolkit-io</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
