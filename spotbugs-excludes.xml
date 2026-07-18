@@ -9,4 +9,17 @@
         <Method name="get" />
         <Bug pattern="EI_EXPOSE_REP" />
     </Match>
+
+    <!-- The returned streams own and close the underlying source on Stream.close(). -->
+    <Match>
+        <Class name="com.microsoft.gctoolkit.shared.io.GCLogFileSource"/>
+        <Method name="lines" />
+        <Bug pattern="OS_OPEN_STREAM" />
+    </Match>
+
+    <Match>
+        <Class name="com.microsoft.gctoolkit.shared.io.GCLogFileSource"/>
+        <Method name="zipEntries" />
+        <Bug pattern="OS_OPEN_STREAM" />
+    </Match>
 </FindBugsFilter>
