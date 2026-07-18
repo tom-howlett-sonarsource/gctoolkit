@@ -9,15 +9,17 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>gctoolkit-api</artifactId>
-    <name>GCToolKit API</name>
-    <description>Model APIs for aggregator, events, inputs.</description>
+    <artifactId>gctoolkit-shared</artifactId>
+    <name>GCToolKit Shared</name>
+    <description>Shared production utilities used by GCToolKit modules.</description>
     <url>${project.parent.url}</url>
 
     <dependencies>
         <dependency>
-            <groupId>com.microsoft.gctoolkit</groupId>
-            <artifactId>gctoolkit-shared</artifactId>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-annotations</artifactId>
+            <version>${spotbugs.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
