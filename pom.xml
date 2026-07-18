@@ -89,6 +89,7 @@
 
     <modules>
         <module>gclogs</module>
+        <module>io</module>
         <module>api</module>
         <module>parser</module>
         <module>vertx</module>
@@ -125,6 +126,11 @@
             <dependency>
                 <groupId>com.microsoft.gctoolkit</groupId>
                 <artifactId>gctoolkit-gclogs</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.gctoolkit</groupId>
+                <artifactId>gctoolkit-io</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
