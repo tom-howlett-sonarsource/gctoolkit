@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.io.support.LogSources;
+
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -121,14 +122,13 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private void findSegments() {
         segments = new ArrayList<>();
         try {
+            List<Path> discovered;
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                discovered = LogSources.listDirectory(getPath());
+            } else {
+                discovered = LogSources.listSiblingsWithPrefix(getPath(), getRootPattern());
             }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+            discovered.stream().map(GCLogFileSegment::new).forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
