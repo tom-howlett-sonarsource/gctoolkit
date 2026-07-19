@@ -6,17 +6,11 @@ import com.microsoft.gctoolkit.io.DataSource;
 import com.microsoft.gctoolkit.io.GCLogFile;
 import com.microsoft.gctoolkit.io.LogFileMetadata;
 import com.microsoft.gctoolkit.jvm.Diary;
+import com.microsoft.gctoolkit.logsource.LogSources;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 public class SafepointLogFile implements DataSource<String> {
 
@@ -45,27 +39,31 @@ public class SafepointLogFile implements DataSource<String> {
 
     public Stream<String> stream() throws IOException {
         if (metadata.isPlainText()) {
-            return Files.lines(path);
+            return LogSources.openPlainLines(path);
         } else if (metadata.isZip()) {
-            return streamZipFile();
+            return LogSources.openZipLines(path);
         } else if (metadata.isGZip()) {
-            return streamGZipFile();
+            return LogSources.openGZipLines(path);
         }
         throw new IOException("Unable to read " + path.toString());
     }
 
+    /**
+     * Alternative to {@link #stream()} that discovers the file format directly
+     * from disk rather than relying on {@link LogFileMetadata}.
+     * @return a lazy line stream
+     * @throws IOException when the file cannot be opened or its format is not readable
+     */
+    Stream<String> streamByFormat() throws IOException {
+        return LogSources.openLines(path, LogSources.detectFormat(path));
+    }
+
     Stream<String> streamZipFile() throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        return LogSources.openZipLines(path);
     }
 
     Stream<String> streamGZipFile() throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        return LogSources.openGZipLines(path);
     }
 
 }
