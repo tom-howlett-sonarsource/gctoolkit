@@ -2,18 +2,14 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
+import com.microsoft.gctoolkit.log.source.LogFileFormat;
+import com.microsoft.gctoolkit.log.source.LogFileSources;
+
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * A single GC log file. If the file is a zip or gzip file,
@@ -48,16 +44,18 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private Stream<String> stream(LogFileMetadata metadata) throws IOException {
-        Stream<String> stream = null;
+        LogFileFormat format = null;
         if (metadata.isPlainText()) {
-            stream = Files.lines(metadata.getPath());
+            format = LogFileFormat.PLAIN_TEXT;
         } else if (metadata.isZip()) {
-            stream = streamZipFile(metadata.getPath());
+            format = LogFileFormat.ZIP;
         } else if (metadata.isGZip()) {
-            stream = streamGZipFile(metadata.getPath());
+            format = LogFileFormat.GZIP;
         }
-        if ( stream == null)
+        if (format == null) {
             throw new IOException("Unable to read " + path.toString());
+        }
+        Stream<String> stream = LogFileSources.openLines(metadata.getPath(), format);
         return Stream.concat(stream
                 .filter(Objects::nonNull)
                 .filter(line -> ! line.isBlank())
@@ -66,19 +64,4 @@ public class SingleGCLogFile extends GCLogFile {
                 ,Stream.of(endOfData()));
 
     }
-
-    private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
-    }
-
-    private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
-    }
-
 }
