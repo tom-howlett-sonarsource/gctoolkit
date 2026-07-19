@@ -9,16 +9,12 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>gctoolkit-api</artifactId>
-    <name>GCToolKit API</name>
-    <description>Model APIs for aggregator, events, inputs.</description>
+    <artifactId>gctoolkit-logsource</artifactId>
+    <name>GCToolKit Log Source</name>
+    <description>Shared IO utilities for discovering and opening GC log sources (plain, ZIP, GZIP).</description>
     <url>${project.parent.url}</url>
 
     <dependencies>
-        <dependency>
-            <groupId>com.microsoft.gctoolkit</groupId>
-            <artifactId>gctoolkit-logsource</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
