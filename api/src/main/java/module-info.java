@@ -31,6 +31,7 @@ import com.microsoft.gctoolkit.jvm.UnifiedJavaVirtualMachine;
  */
 module com.microsoft.gctoolkit.api {
     requires java.logging;
+    requires transitive com.microsoft.gctoolkit.io.support;
 
     exports com.microsoft.gctoolkit;
     exports com.microsoft.gctoolkit.aggregator;
