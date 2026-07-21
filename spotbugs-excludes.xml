@@ -9,4 +9,11 @@
         <Method name="get" />
         <Bug pattern="EI_EXPOSE_REP" />
     </Match>
+
+    <!-- The returned Stream owns the reader and closes it from its onClose handler. -->
+    <Match>
+        <Class name="com.microsoft.gctoolkit.gclog.GCLogSource"/>
+        <Method name="lines" />
+        <Bug pattern="OS_OPEN_STREAM" />
+    </Match>
 </FindBugsFilter>
