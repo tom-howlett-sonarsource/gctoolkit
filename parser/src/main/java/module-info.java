@@ -5,6 +5,7 @@
  * Contains the GCToolKit GC log parser. The parser is an internal module.
  */
 module com.microsoft.gctoolkit.parser {
+    requires com.microsoft.gctoolkit.logsource;
     requires com.microsoft.gctoolkit.api;
     requires java.logging;
 
