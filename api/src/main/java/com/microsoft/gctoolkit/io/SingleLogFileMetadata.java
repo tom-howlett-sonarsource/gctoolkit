@@ -2,10 +2,8 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 /**
@@ -13,11 +11,9 @@ import java.util.stream.Stream;
  */
 public class SingleLogFileMetadata extends LogFileMetadata {
 
-    private static final Logger LOG = Logger.getLogger(SingleLogFileMetadata.class.getName());
+    private final LogFileSegment logFile;
 
-    private LogFileSegment logFile;
-
-    public SingleLogFileMetadata(Path path) throws IOException {
+    public SingleLogFileMetadata(Path path) {
         super(path);
         this.logFile = new GCLogFileSegment(path);
     }

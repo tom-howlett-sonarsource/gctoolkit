@@ -26,7 +26,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     private List<LogFileSegment> segments;
 
-    public RotatingLogFileMetadata(Path path) throws IOException {
+    public RotatingLogFileMetadata(Path path) {
         super(path);
     }
 
