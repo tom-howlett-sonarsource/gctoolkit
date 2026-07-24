@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
@@ -48,8 +47,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         try (var zipfile = new ZipFile(getPath().toFile())) {
             segments = zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
+                    .map(zipEntry -> new GCLogFileZipSegment(getPath(), zipEntry.getName(), zipEntry.getSize()))
                     .collect(toList());
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
@@ -69,6 +67,14 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the total byte size for all log segments.
+     * @return The total byte size for all log segments.
+     */
+    public long getTotalByteSize() {
+        return logFiles().mapToLong(LogFileSegment::getByteSize).sum();
     }
 
     /**
