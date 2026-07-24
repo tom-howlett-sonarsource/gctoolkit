@@ -62,6 +62,42 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
      * contain multiple entries.
      * @return The number of files in the file.
      */
+    /**
+     * Return the combined byte size of every discovered rotating log segment.
+     * For ZIP files, this is the sum of uncompressed sizes of all non-directory entries.
+     * For directories and plain text files, this is the sum of each segment's file size on disk.
+     * @return The total byte size, or {@code 0L} when there are no eligible entries.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return getZipTotalByteSize();
+        }
+        logFiles();
+        return segments.stream()
+                .mapToLong(segment -> {
+                    try {
+                        return Files.size(segment.getPath());
+                    } catch (IOException e) {
+                        LOG.warning(e.getMessage());
+                        return 0L;
+                    }
+                })
+                .sum();
+    }
+
+    private long getZipTotalByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .map(size -> size == -1 ? 0L : size)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
     public int getNumberOfFiles() {
         if ( this.segments == null)
             if ( isZip())
