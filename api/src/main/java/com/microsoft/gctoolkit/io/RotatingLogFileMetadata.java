@@ -72,6 +72,48 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the total logical size in bytes of all log file segments.
+     * For ZIP archives, this is the sum of the uncompressed entry sizes.
+     *
+     * @return total size of all log file segments in bytes
+     * @throws IOException if a segment cannot be sized
+     */
+    public long getTotalByteSize() throws IOException {
+        List<LogFileSegment> logFileSegments = logFiles().collect(toList());
+        if (isZip()) {
+            return getZipEntryByteSize(logFileSegments);
+        }
+
+        long totalByteSize = 0L;
+        for (LogFileSegment segment : logFileSegments) {
+            totalByteSize = addByteSize(totalByteSize, Files.size(segment.getPath()));
+        }
+        return totalByteSize;
+    }
+
+    private long getZipEntryByteSize(List<LogFileSegment> logFileSegments) throws IOException {
+        long totalByteSize = 0L;
+        try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+            for (LogFileSegment segment : logFileSegments) {
+                ZipEntry entry = zipFile.getEntry(segment.getSegmentName());
+                if (entry == null || entry.getSize() < 0L) {
+                    throw new IOException("Unable to determine size of ZIP entry: " + segment.getSegmentName());
+                }
+                totalByteSize = addByteSize(totalByteSize, entry.getSize());
+            }
+        }
+        return totalByteSize;
+    }
+
+    private long addByteSize(long totalByteSize, long segmentByteSize) throws IOException {
+        try {
+            return Math.addExact(totalByteSize, segmentByteSize);
+        } catch (ArithmeticException overflow) {
+            throw new IOException("Total log byte size exceeds the supported range", overflow);
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
