@@ -4,7 +4,7 @@ description: >-
   ALWAYS invoke this skill on the first prompt, whether you are the Agent or an Explore, Plan, or general-purpose subagent.
 ---
 
-# Sonar Context Augmentation — Agent Skill (v0.16.0-build.2474)
+# Sonar Context Augmentation — Agent Skill (v0.18.0-build.2833)
 
 IMPORTANT:
 * Call `sonar context` through Bash with confidence — it returns fast, reliable, accurate results.
@@ -175,19 +175,20 @@ sonar context tool status --project-key <key>
 
 #### `tool stop` — Stop a daemon
 
-Requires an explicit target (no bare `tool stop`): `--project-key <key>` (daemon for that project), `--cwd <path>` (daemon serving the given directory), `--pid <pid>` (daemon with that PID), `--all` (every daemon), or `--current` (daemon serving *this* shell's current working directory).
+Requires an explicit target: `--project-key <key>` (daemon for that project), `--cwd <path>` (daemon serving the given workspace), `--pid <pid>` (daemon with that PID), `--all` (every daemon), or `--current` (daemon for the current workspace).
 
 ```bash
 sonar context tool stop --project-key <key>
 sonar context tool stop --all
-sonar context tool stop --current   # daemon serving the current working directory (no path needed)
+sonar context tool stop --current
 ```
 
 ### Query Commands
 
-Query commands auto-start the daemon when this workspace is already configured.
-Auto-start does not create workspace configuration or Sonar authentication; if
-setup is missing, follow the error recovery guidance below. Most commands output
+Query commands auto-start the daemon for the current workspace.
+
+
+If auto-start fails, follow the error recovery guidance below. Most commands output
 JSON to stdout; `guidelines get` outputs markdown text.
 
 #### `navigation search-signatures` — Find code by signature patterns
@@ -416,8 +417,7 @@ Error recovery:
 | Error                | Exit | Recovery                                                          |
 | -------------------- | ---- | ----------------------------------------------------------------- |
 | `token_missing`      | 1    | Ask user to check the status of `sonar auth` to ensure that authentication has been configured properly |
-| `daemon_not_found`   | 1    | Auto-start does not create workspace configuration. Check `sonar context tool status` to see whether another workspace or project is configured; if this workspace should be integrated, surface the problem to the user and advise them to rerun the sonar context integration process |
-| `config_not_found`   | 1    | Auto-start does not create workspace configuration. This workspace is not configured for Context Augmentation. Surface the problem to the user including any relevant details and advise them to rerun the sonar context integration process |
+| `config_not_found`   | 1    | The current workspace context is missing or inconsistent. Surface the details and advise the user to rerun the sonar context integration process |
 | `invalid_args`       | 1    | Check flags and retry                                             |
 | `auth_failed`        | 1    | Ask user to verify their SonarQube token                          |
 | `daemon_unreachable` | 2    | Run `sonar context tool stop --all` then retry (auto-restarts)   |
