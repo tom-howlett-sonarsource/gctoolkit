@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
@@ -21,6 +23,8 @@ import java.util.stream.Stream;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileSegment implements LogFileSegment {
+
+    private static final Logger LOG = Logger.getLogger(GCLogFileSegment.class.getName());
 
     private final Path path;
     private final int segmentIndex;
@@ -125,6 +129,16 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public boolean isCurrent() {
         return current;
+    }
+
+    @Override
+    public long getByteSize() {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+        }
+        return 0L;
     }
 
     private DateTimeStamp ageOfJVMAtLogStart() {
