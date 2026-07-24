@@ -72,6 +72,63 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For directory input and for input identifying a
+     * single member of a rotating file set, this is the sum of the on-disk sizes
+     * of every discovered segment. For ZIP input, this is the sum of the
+     * uncompressed sizes of all non-directory entries.
+     *
+     * @return the total byte size across all eligible segments, or {@code 0L}
+     *         when no eligible entries are found.
+     */
+    public long getTotalByteSize() {
+        ensureSegmentsDiscovered();
+        if (isZip()) {
+            return computeZipTotalByteSize();
+        }
+        return computeFileSystemTotalByteSize();
+    }
+
+    private void ensureSegmentsDiscovered() {
+        if (segments != null) return;
+        if (isPlainText() || isDirectory())
+            findSegments();
+        else if (isZip())
+            findZIPSegments();
+        else {
+            LOG.warning("unknown log file format");
+            segments = new ArrayList<>();
+        }
+    }
+
+    private long computeZipTotalByteSize() {
+        try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    private long computeFileSystemTotalByteSize() {
+        long total = 0L;
+        for (LogFileSegment segment : segments) {
+            Path segmentPath = segment.getPath();
+            if (!Files.isRegularFile(segmentPath)) continue;
+            try {
+                total += Files.size(segmentPath);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine size of segment.", ioe);
+            }
+        }
+        return total;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
