@@ -5,7 +5,9 @@ package com.microsoft.gctoolkit.io;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -68,17 +70,41 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        InputStream archiveStream = Files.newInputStream(path);
+        try {
+            ZipInputStream zipStream = new ZipInputStream(archiveStream);
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    new BufferedInputStream(zipStream), Charset.defaultCharset()));
+            return CloseableStreams.lines(reader, reader);
+        } catch (IOException | RuntimeException exception) {
+            closeAfterFailure(archiveStream, exception);
+            throw exception;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        InputStream archiveStream = Files.newInputStream(path);
+        try {
+            GZIPInputStream gzipStream = new GZIPInputStream(archiveStream);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    new BufferedInputStream(gzipStream), Charset.defaultCharset()));
+            return CloseableStreams.lines(reader, reader);
+        } catch (IOException | RuntimeException exception) {
+            closeAfterFailure(archiveStream, exception);
+            throw exception;
+        }
+    }
+
+    private static void closeAfterFailure(InputStream stream, Exception failure) {
+        try {
+            stream.close();
+        } catch (IOException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
 }
