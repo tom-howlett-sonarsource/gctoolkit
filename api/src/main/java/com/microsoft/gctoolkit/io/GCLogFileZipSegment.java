@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private final Path path;
     private final String segmentName;
+    private final ZipFileFactory zipFileFactory;
     private DateTimeStamp endTime = null;
     private DateTimeStamp startTime = null;
 
@@ -38,8 +40,13 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @param segmentName name of first segment in zip file
      */
     public GCLogFileZipSegment(Path path, String segmentName) {
+        this(path, segmentName, zipPath -> new ZipFile(zipPath.toFile()));
+    }
+
+    GCLogFileZipSegment(Path path, String segmentName, ZipFileFactory zipFileFactory) {
         this.path = path;
         this.segmentName = segmentName;
+        this.zipFileFactory = zipFileFactory;
     }
 
     /**
@@ -56,19 +63,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> !s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -127,14 +138,39 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
+        ZipFile file = null;
         try {
-            ZipFile file = new ZipFile(path.toFile());
+            file = zipFileFactory.open(path);
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            ZipFile archive = file;
+            return reader.lines().onClose(() -> close(reader, archive));
         } catch (IOException e) {
+            closeAfterFailure(file, e);
             e.printStackTrace();
+        } catch (RuntimeException e) {
+            closeAfterFailure(file, e);
+            throw e;
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void close(BufferedReader reader, ZipFile file) {
+        try (ZipFile archive = file; BufferedReader lines = reader) {
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    private static void closeAfterFailure(ZipFile file, Exception failure) {
+        if (file == null) {
+            return;
+        }
+        try {
+            file.close();
+        } catch (IOException closeException) {
+            failure.addSuppressed(closeException);
+        }
     }
 
     /**
@@ -144,5 +180,10 @@ public class GCLogFileZipSegment implements LogFileSegment {
     @Override
     public String toString() {
         return getSegmentName();
+    }
+
+    @FunctionalInterface
+    interface ZipFileFactory {
+        ZipFile open(Path path) throws IOException;
     }
 }

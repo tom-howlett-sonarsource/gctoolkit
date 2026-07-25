@@ -5,7 +5,9 @@ package com.microsoft.gctoolkit.io;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -29,9 +31,15 @@ public class SingleGCLogFile extends GCLogFile {
      */
 
     private SingleLogFileMetadata metadata = null;
+    private final InputStreamFactory inputStreamFactory;
 
     public SingleGCLogFile(Path path) {
+        this(path, Files::newInputStream);
+    }
+
+    SingleGCLogFile(Path path, InputStreamFactory inputStreamFactory) {
         super(path);
+        this.inputStreamFactory = inputStreamFactory;
     }
 
     @Override
@@ -67,18 +75,52 @@ public class SingleGCLogFile extends GCLogFile {
 
     }
 
-    private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+    private Stream<String> streamZipFile(Path path) throws IOException {
+        ZipInputStream zipStream = new ZipInputStream(inputStreamFactory.open(path));
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException exception) {
+            closeAfterFailure(zipStream, exception);
+            throw exception;
+        }
     }
 
-    private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+    private Stream<String> streamGZipFile(Path path) throws IOException {
+        InputStream inputStream = inputStreamFactory.open(path);
+        try {
+            GZIPInputStream gzipStream = new GZIPInputStream(inputStream);
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (IOException | RuntimeException exception) {
+            closeAfterFailure(inputStream, exception);
+            throw exception;
+        }
+    }
+
+    private static Stream<String> lines(BufferedReader reader) {
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException exception) {
+                throw new UncheckedIOException(exception);
+            }
+        });
+    }
+
+    private static void closeAfterFailure(InputStream inputStream, Exception failure) {
+        try {
+            inputStream.close();
+        } catch (IOException closeException) {
+            failure.addSuppressed(closeException);
+        }
+    }
+
+    @FunctionalInterface
+    interface InputStreamFactory {
+        InputStream open(Path path) throws IOException;
     }
 
 }
