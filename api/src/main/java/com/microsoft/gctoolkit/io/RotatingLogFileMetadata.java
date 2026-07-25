@@ -25,9 +25,15 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private final ZipFileOpener zipFileOpener;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
+        this(path, ZipFileOpener.DEFAULT);
+    }
+
+    RotatingLogFileMetadata(Path path, ZipFileOpener zipFileOpener) throws IOException {
         super(path);
+        this.zipFileOpener = zipFileOpener;
     }
 
     public Stream<LogFileSegment> logFiles() {
@@ -45,11 +51,11 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
+        try (ZipFile zipfile = zipFileOpener.open(getPath())) {
             segments = zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
+                    .map(name -> new GCLogFileZipSegment(getPath(), name, zipFileOpener))
                     .collect(toList());
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
