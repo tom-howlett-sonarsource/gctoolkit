@@ -10,6 +10,7 @@ import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -47,16 +48,45 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if (getMetaData().isDirectory()
+                || getMetaData().isPlainText()
+                || getMetaData().isZip()) {
+            List<Stream<String>> openedStreams =
+                    Collections.synchronizedList(new LinkedList<>());
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        openedStreams.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> closeStreams(openedStreams));
+        } else {
             return Stream.of(endOfData());
+        }
+    }
+
+    static void closeStreams(final List<Stream<String>> streams) {
+        RuntimeException failure = null;
+        synchronized (streams) {
+            for (Stream<String> stream : streams) {
+                try {
+                    stream.close();
+                } catch (RuntimeException exception) {
+                    if (failure == null) {
+                        failure = exception;
+                    } else {
+                        failure.addSuppressed(exception);
+                    }
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
