@@ -73,12 +73,14 @@ public class SingleGCLogFile extends GCLogFile {
         do {
             entry = zipStream.getNextEntry();
         } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+        return CloseableStream.onClose(reader.lines(), reader);
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return CloseableStream.onClose(reader.lines(), reader);
     }
 
 }
