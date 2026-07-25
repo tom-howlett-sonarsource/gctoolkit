@@ -9,7 +9,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
-import java.util.logging.Logger;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
@@ -20,8 +19,6 @@ import java.util.zip.ZipInputStream;
  * then the first entry is the file of interest.
  */
 public class SingleGCLogFile extends GCLogFile {
-
-    private static final Logger LOGGER = Logger.getLogger(SingleGCLogFile.class.getName());
 
     /**
      * Constructor for a single, GC log file.
@@ -62,23 +59,34 @@ public class SingleGCLogFile extends GCLogFile {
                 .filter(Objects::nonNull)
                 .filter(line -> ! line.isBlank())
                 .map(String::trim)
-                .filter(s -> s.length() > 0)
+                .filter(s -> !s.isEmpty())
                 ,Stream.of(endOfData()));
 
     }
 
+    @SuppressWarnings("java:S2093")
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
         ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        boolean streamCreated = false;
+        try {
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+            streamCreated = true;
+            return ResourceStreams.lines(reader);
+        } finally {
+            if (!streamCreated) {
+                zipStream.close();
+            }
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return ResourceStreams.lines(reader);
     }
 
 }
