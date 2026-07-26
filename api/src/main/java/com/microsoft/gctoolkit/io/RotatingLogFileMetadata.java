@@ -72,6 +72,29 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the total uncompressed byte size of all log segments.
+     *
+     * @return total byte size of all log segments
+     * @throws IOException if a segment's size cannot be read
+     */
+    public long getTotalByteSize() throws IOException {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .reduce(0L, Math::addExact);
+            }
+        }
+
+        long totalByteSize = 0L;
+        for (LogFileSegment segment : logFiles().collect(toList())) {
+            totalByteSize = Math.addExact(totalByteSize, Files.size(segment.getPath()));
+        }
+        return totalByteSize;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
