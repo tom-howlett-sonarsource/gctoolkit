@@ -54,6 +54,17 @@ public class GCLogFileZipSegment implements LogFileSegment {
         return this.segmentName;
     }
 
+    @Override
+    public long getByteSize() throws IOException {
+        try (ZipFile file = new ZipFile(path.toFile())) {
+            ZipEntry entry = file.getEntry(segmentName);
+            if (entry == null || entry.getSize() < 0) {
+                throw new IOException("Unable to determine the size of ZIP entry: " + segmentName);
+            }
+            return entry.getSize();
+        }
+    }
+
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
             startTime = stream()
