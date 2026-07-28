@@ -373,8 +373,8 @@ public class PreUnifiedG1GCParser extends PreUnifiedGCLogParser implements G1GCP
 
         if (trace.contains(7, "young")) {
             if (initialMark)
-            	// jlittle-ptc: Cause was misaligned, originally pointed to group 3, but seems to be consistently in group 6.
-            	// which is default for trace.gcCause(), and would match with other off-by-3 issues I've found.
+                // jlittle-ptc: Cause was misaligned, originally pointed to group 3, but seems to be consistently in group 6.
+                // which is default for trace.gcCause(), and would match with other off-by-3 issues I've found.
                 forwardReference = new G1YoungInitialMark(trace.getDateTimeStamp(), trace.gcCause(), trace.getDoubleGroup(trace.groupCount()));
             else
                 forwardReference = new G1Young(trace.getDateTimeStamp(), trace.gcCause(), trace.getDoubleGroup(trace.groupCount()));
@@ -393,18 +393,18 @@ public class PreUnifiedG1GCParser extends PreUnifiedGCLogParser implements G1GCP
     //1566.108: [GC pause (mixed) 7521K->5701K(13M), 0.0030090 secs]
     //549.243: [GC pause (young) (initial-mark) 9521K->7824K(13M), 0.0021590 secs]
     //0.867: [GC pause (G1 Evacuation Pause) (young) 52816K->9563K(1024M), 0.0225122 secs]
-	//1834339.155: [GC pause (G1 Evacuation Pause) (mixed) 309M->141M(1111M), 0.0188779 secs]
+    //1834339.155: [GC pause (G1 Evacuation Pause) (mixed) 309M->141M(1111M), 0.0188779 secs]
     private void processYoung(GCLogTrace trace, String line) {
-    	// #433 - All offsets in method incremented by 3 as they weren't matching the correct groups.
+        // #433 - All offsets in method incremented by 3 as they weren't matching the correct groups.
         MemoryPoolSummary summary = trace.getOccupancyBeforeAfterWithMemoryPoolSizeSummary(12);
         if ("young".equals(trace.getGroup(7))) {
             G1Young collection = null;
             if (trace.getGroup(9) == null)
                 collection = new G1Young(getClock(), trace.gcCause(), trace.getPauseTime());
             else {
-            	// Sample lines not currently parsed:
-            	//1.488: [GC pause (Metadata GC Threshold) (young) (initial-mark) 31558K->14662K(1024M), 0.0073758 secs]
-            	//2439412.011: [GC pause (G1 Humongous Allocation) (young) (initial-mark) 616M->187M(1131M), 0.0484678 secs]
+                // Sample lines not currently parsed:
+                //1.488: [GC pause (Metadata GC Threshold) (young) (initial-mark) 31558K->14662K(1024M), 0.0073758 secs]
+                //2439412.011: [GC pause (G1 Humongous Allocation) (young) (initial-mark) 616M->187M(1131M), 0.0484678 secs]
                 trace.notYetImplemented();
                 return;
             }
@@ -1213,7 +1213,7 @@ public class PreUnifiedG1GCParser extends PreUnifiedGCLogParser implements G1GCP
         if (line.startsWith("Memory: ")) return;
         if (line.startsWith("CommandLine flags: ")) return;
 
-        GCToolKit.LOG_DEBUG_MESSAGE(() -> "Missed: " + line);
+        GCToolKit.logDebugMessage(() -> "Missed: " + line);
         LOGGER.log(Level.FINE, "Missed: {0}", line);
     }
 

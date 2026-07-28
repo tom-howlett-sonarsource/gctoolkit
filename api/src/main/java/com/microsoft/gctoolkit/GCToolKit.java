@@ -53,14 +53,14 @@ public class GCToolKit {
     }
 
     /**
-     * Print a debug message to System.out if gctoolkit.debug is empty, is set to "all",
+     * Log a debug message if gctoolkit.debug is empty, is set to "all",
      * or contains "className" but does not contain "-className".
      * For example, to enable debug logging for all classes except UnifiedG1GCParser:
      * <code>-Dgctoolkit.debug=all,-com.microsoft.gctoolkit.parser.UnifiedG1GCParser</code>
      *
      * @param message Supplies the message to log. If null, nothing will be logged.
      */
-    public static void LOG_DEBUG_MESSAGE(Supplier<String> message) {
+    public static void logDebugMessage(Supplier<String> message) {
         if (DEBUGGING && message != null) {
             StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
             String methodName = stackTrace[2].getMethodName();
@@ -68,7 +68,7 @@ public class GCToolKit {
             String fileName = stackTrace[2].getFileName();
             int lineNumber = stackTrace[2].getLineNumber();
             if (isDebugging(className)) {
-                System.out.println(String.format("DEBUG: %s.%s(%s:%d): %s", className, methodName, fileName, lineNumber, message.get()));
+                LOGGER.log(Level.FINE, () -> String.format("DEBUG: %s.%s(%s:%d): %s", className, methodName, fileName, lineNumber, message.get()));
             }
         }
     }
@@ -112,11 +112,10 @@ public class GCToolKit {
                     .map(ServiceLoader.Provider::get)
                     .forEach(aggregation -> {
                         registeredAggregations.add(aggregation);
-                        LOG_DEBUG_MESSAGE(() -> "ServiceLoader provided: " + aggregation.getClass().getName());
+                        logDebugMessage(() -> "ServiceLoader provided: " + aggregation.getClass().getName());
                     });
-        } catch (Throwable e) {
+        } catch (Exception e) {
             LOGGER.log(Level.SEVERE, e.getMessage(), e);
-            throw e;
         }
     }
 
@@ -280,7 +279,7 @@ public class GCToolKit {
         }
 
         for (DataSourceParser dataSourceParser : dataSourceParsers) {
-            LOG_DEBUG_MESSAGE(() -> "Registering " + dataSourceParser.getClass().getName() + " with " + dataSourceChannel.getClass().getName());
+            logDebugMessage(() -> "Registering " + dataSourceParser.getClass().getName() + " with " + dataSourceChannel.getClass().getName());
             dataSourceParser.diary(diary);
             dataSourceChannel.registerListener(dataSourceParser);
             dataSourceParser.publishTo(jvmEventChannel);
@@ -321,7 +320,7 @@ public class GCToolKit {
     private List<Aggregator<? extends Aggregation>> filterAggregations(Set<EventSource> events) {
         List<Aggregator<? extends Aggregation>> aggregators = new ArrayList<>();
         for (Aggregation aggregation : registeredAggregations) {
-            LOG_DEBUG_MESSAGE(() -> "Evaluating: " + aggregation.getClass().getName());
+            logDebugMessage(() -> "Evaluating: " + aggregation.getClass().getName());
             Constructor<? extends Aggregator<?>> constructor = constructor(aggregation);
             if (constructor == null) {
                 LOGGER.log(Level.WARNING, "Cannot find one of: default constructor or @Collates annotation for " + aggregation.getClass().getName());
@@ -345,10 +344,10 @@ public class GCToolKit {
                 continue;
             }
             if (events.stream().anyMatch(aggregator::aggregates)) {
-                LOG_DEBUG_MESSAGE(() -> "Including : " + aggregation.getClass().getName());
+                logDebugMessage(() -> "Including : " + aggregation.getClass().getName());
                 aggregators.add(aggregator);
             } else {
-                LOG_DEBUG_MESSAGE(() -> "Excluding : " + aggregation.getClass().getName());
+                logDebugMessage(() -> "Excluding : " + aggregation.getClass().getName());
             }
         }
 
