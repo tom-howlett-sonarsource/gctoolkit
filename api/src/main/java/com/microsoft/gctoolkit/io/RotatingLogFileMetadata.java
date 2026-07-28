@@ -44,6 +44,33 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return segments.stream();
     }
 
+    /**
+     * Return the total uncompressed byte size of all log file segments.
+     *
+     * @return the total byte size
+     * @throws IOException when the size of a segment cannot be read
+     */
+    public long getTotalByteSize() throws IOException {
+        List<LogFileSegment> logFileSegments = logFiles().collect(toList());
+        long totalByteSize = 0L;
+        if (isZip()) {
+            try (ZipFile file = new ZipFile(getPath().toFile())) {
+                for (LogFileSegment segment : logFileSegments) {
+                    ZipEntry entry = file.getEntry(segment.getSegmentName());
+                    if (entry == null || entry.getSize() < 0) {
+                        throw new IOException("Unable to determine the size of ZIP entry: " + segment.getSegmentName());
+                    }
+                    totalByteSize = Math.addExact(totalByteSize, entry.getSize());
+                }
+            }
+        } else {
+            for (LogFileSegment segment : logFileSegments) {
+                totalByteSize = Math.addExact(totalByteSize, segment.getByteSize());
+            }
+        }
+        return totalByteSize;
+    }
+
     private void findZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
             segments = zipfile.stream()
