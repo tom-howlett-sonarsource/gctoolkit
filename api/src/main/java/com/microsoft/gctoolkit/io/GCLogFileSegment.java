@@ -59,6 +59,11 @@ public class GCLogFileSegment implements LogFileSegment {
         return getPath().toFile().getName();
     }
 
+    @Override
+    public long getByteSize() throws IOException {
+        return Files.size(path);
+    }
+
     /**
      * return some comparable value for the first time found in the log.
      * If isn't found, then return min value. This combined with the end
