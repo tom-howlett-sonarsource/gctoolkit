@@ -72,6 +72,62 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the total byte size of every discovered rotating log segment.
+     * For ZIP files, this is the sum of the uncompressed size of every
+     * non-directory entry.
+     *
+     * @return The combined byte size of all discovered log segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return getTotalZIPByteSize();
+
+        try (Stream<Path> paths = discoveredSegmentPaths()) {
+            return paths.mapToLong(this::getSegmentByteSize).sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    private long getTotalZIPByteSize() {
+        try (var zipFile = new ZipFile(getPath().toFile())) {
+            return zipFile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(this::getZipEntryByteSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    private long getZipEntryByteSize(ZipEntry zipEntry) {
+        return Math.max(zipEntry.getSize(), 0L);
+    }
+
+    private Stream<Path> discoveredSegmentPaths() throws IOException {
+        if (isDirectory())
+            return Files.list(getPath());
+
+        Path parent = getPath().getParent();
+        if (parent == null)
+            parent = getPath().toAbsolutePath().getParent();
+
+        return Files.list(parent)
+                .filter(file -> file.getFileName().toString().startsWith(getRootPattern()));
+    }
+
+    private long getSegmentByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
