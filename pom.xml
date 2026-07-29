@@ -89,6 +89,7 @@
 
     <modules>
         <module>gclogs</module>
+        <module>logsource</module>
         <module>api</module>
         <module>parser</module>
         <module>vertx</module>
@@ -110,6 +111,11 @@
             <dependency>
                 <groupId>com.microsoft.gctoolkit</groupId>
                 <artifactId>gctoolkit-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.gctoolkit</groupId>
+                <artifactId>gctoolkit-logsource</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -517,8 +523,8 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <configuration>
-                            <!-- don't aggregate parser and vertx javadocs -->
-                            <skippedModules>parser,vertx</skippedModules>
+                            <!-- don't aggregate logsource, parser and vertx javadocs -->
+                            <skippedModules>logsource,parser,vertx</skippedModules>
                         </configuration>
                         <executions>
                             <execution>

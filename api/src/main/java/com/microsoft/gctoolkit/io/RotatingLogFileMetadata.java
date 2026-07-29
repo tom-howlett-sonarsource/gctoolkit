@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
 
@@ -45,12 +43,12 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
-                    .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
-                    .collect(toList());
+        segments = new ArrayList<>();
+        try {
+            logSource().zipEntryNames()
+                    .stream()
+                    .map(name -> new GCLogFileZipSegment(getPath(), name))
+                    .forEach(segments::add);
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
