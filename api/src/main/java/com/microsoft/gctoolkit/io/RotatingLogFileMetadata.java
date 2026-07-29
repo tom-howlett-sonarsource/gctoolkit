@@ -45,16 +45,66 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
+        segments = discoverZIPSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
+            return zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
+                    .map(name -> new GCLogFileZipSegment(getPath(), name))
                     .collect(toList());
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
-        orderSegments();
+        return new ArrayList<>();
+    }
+
+    /**
+     * Return the combined size, in bytes, of every log file segment that makes up the
+     * rotating log, including the segment currently being written to. The segments are
+     * those that would be discovered by {@link #logFiles()}; for a Zip file, the sum is
+     * of the uncompressed size of each of its non-directory entries.
+     *
+     * @return The total number of bytes in the rotating log, {@code 0L} if there are no
+     * eligible segments or the log file format is not supported.
+     */
+    public long getTotalByteSize() {
+        if (isPlainText() || isDirectory())
+            return discoverSegments().stream()
+                    .map(LogFileSegment::getPath)
+                    .mapToLong(RotatingLogFileMetadata::byteSizeOf)
+                    .sum();
+        else if (isZip())
+            return totalUncompressedZIPEntrySize();
+
+        LOG.warning("unknown log file format");
+        return 0L;
+    }
+
+    private static long byteSizeOf(Path path) {
+        try {
+            return Files.isRegularFile(path) ? Files.size(path) : 0L;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine the size of " + path, ioe);
+            return 0L;
+        }
+    }
+
+    private long totalUncompressedZIPEntrySize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    // the uncompressed size of an entry is -1 when it is unknown
+                    .map(size -> Math.max(size, 0L))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
     }
 
     /**
@@ -119,20 +169,28 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverSegments() {
+        List<LogFileSegment> discovered = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (Stream<Path> files = Files.list(getPath())) {
+                    files.map(GCLogFileSegment::new).forEach(discovered::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                try (Stream<Path> files = Files.list(getPath().getParent())) {
+                    files.filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                            .map(GCLogFileSegment::new).forEach(discovered::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discovered;
     }
 
     private void orderSegments() {
