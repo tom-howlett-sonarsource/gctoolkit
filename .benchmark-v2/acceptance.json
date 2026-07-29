@@ -1,0 +1,14 @@
+{
+  "command": [
+    "mvn",
+    "--batch-mode",
+    "-pl",
+    "api,parser",
+    "-am",
+    "-Dtest=V2VisibleSingleGCLogFileTest,V2VisibleSafepointLogFileTest",
+    "-Dsurefire.failIfNoSpecifiedTests=false",
+    "test"
+  ],
+  "schema_version": "2.0",
+  "task": "shared-log-source"
+}
