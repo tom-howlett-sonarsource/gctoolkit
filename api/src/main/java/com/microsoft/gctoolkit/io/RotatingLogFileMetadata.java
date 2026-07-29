@@ -72,6 +72,55 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined uncompressed byte size of all discovered log segments.
+     *
+     * @return total byte size, or {@code 0L} when there are no eligible segments
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return getZIPByteSize();
+        }
+
+        if (isPlainText() || isDirectory()) {
+            return getFileSystemByteSize();
+        }
+
+        return 0L;
+    }
+
+    private long getFileSystemByteSize() {
+        Path searchDirectory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        String rootPattern = isDirectory() ? null : getRootPattern();
+        try (Stream<Path> paths = Files.list(searchDirectory)) {
+            var eligiblePaths = paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> rootPattern == null || path.getFileName().toString().startsWith(rootPattern))
+                    .iterator();
+            long totalByteSize = 0L;
+            while (eligiblePaths.hasNext()) {
+                totalByteSize += Files.size(eligiblePaths.next());
+            }
+            return totalByteSize;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getZIPByteSize() {
+        try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+            return zipFile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine ZIP log size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
