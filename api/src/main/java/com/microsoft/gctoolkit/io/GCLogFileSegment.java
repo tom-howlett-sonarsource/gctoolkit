@@ -129,11 +129,13 @@ public class GCLogFileSegment implements LogFileSegment {
 
     private DateTimeStamp ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
         return startTime;
     }
