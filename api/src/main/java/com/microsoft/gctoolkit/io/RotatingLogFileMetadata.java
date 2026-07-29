@@ -58,6 +58,55 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every log segment that makes up this rotating log,
+     * including the segment currently being written to. For a Zip file, the sum is over the
+     * uncompressed sizes of all of the non directory entries.
+     *
+     * @return The total number of bytes in the rotating log, {@code 0} if there are no eligible segments.
+     */
+    public long getTotalByteSize() {
+        if ( isPlainText() || isDirectory())
+            return totalSegmentFileByteSize();
+        else if ( isZip())
+            return totalZipEntryByteSize();
+        LOG.warning("unknown log file format");
+        return 0L;
+    }
+
+    private long totalZipEntryByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(zipEntry -> Math.max(zipEntry.getSize(), 0L))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    private long totalSegmentFileByteSize() {
+        try (Stream<Path> candidates = candidateSegmentPaths()) {
+            return candidates
+                    .filter(Files::isRegularFile)
+                    .mapToLong(this::byteSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
+        }
+        return 0L;
+    }
+
+    private long byteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, ioe, () -> "Unable to determine the size of " + path);
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
@@ -120,19 +169,27 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     private void findSegments() {
         segments = new ArrayList<>();
-        try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+        try (Stream<Path> candidates = candidateSegmentPaths()) {
+            candidates.map(GCLogFileSegment::new).forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
         orderSegments();
+    }
+
+    /**
+     * The paths that make up the rotating log, either every entry of the directory or, when
+     * constructed from an individual member of a rotating file set, every sibling sharing the
+     * root of the rotating log name.
+     *
+     * @return A stream of candidate segment paths, to be closed by the caller.
+     * @throws IOException if the paths cannot be listed.
+     */
+    private Stream<Path> candidateSegmentPaths() throws IOException {
+        if (isDirectory())
+            return Files.list(getPath());
+        return Files.list(getPath().getParent())
+                .filter(file -> file.getFileName().toString().startsWith(getRootPattern()));
     }
 
     private void orderSegments() {
