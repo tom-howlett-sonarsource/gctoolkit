@@ -45,8 +45,17 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
+        segments = discoverZIPSegments();
+        orderSegments();
+    }
+
+    /**
+     * Discover the entries held in a ZIP file without imposing an order on them.
+     * @return the discovered segments, empty if the ZIP file could not be read.
+     */
+    private List<LogFileSegment> discoverZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
+            return zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
@@ -54,7 +63,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
-        orderSegments();
+        return new ArrayList<>();
     }
 
     /**
@@ -69,6 +78,69 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined size, in bytes, of every discovered log file segment, including
+     * the log currently being written to. For a ZIP file, the uncompressed size of each
+     * non-directory entry is used.
+     * @return The total number of bytes covered by the rotating log, {@code 0} if there
+     * are no eligible segments.
+     */
+    public long getTotalByteSize() {
+        if ( isZip())
+            return uncompressedByteSize(discoveredSegments());
+        else if ( isPlainText() || isDirectory())
+            return fileByteSize(discoveredSegments());
+        LOG.warning("unknown log file format");
+        return 0L;
+    }
+
+    /**
+     * The segments to be measured. Discovery is repeated only when {@link #logFiles()} has
+     * yet to run, in which case the ordering of the segments, which is irrelevant to a sum
+     * of their sizes, is not established.
+     * @return the segments discovered for this log.
+     */
+    private List<LogFileSegment> discoveredSegments() {
+        if ( segments != null)
+            return segments;
+        return isZip() ? discoverZIPSegments() : discoverSegments();
+    }
+
+    private static long fileByteSize(List<LogFileSegment> logFileSegments) {
+        return logFileSegments.stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(RotatingLogFileMetadata::byteSize)
+                .sum();
+    }
+
+    private static long byteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine the size of a log segment.", ioe);
+            return 0L;
+        }
+    }
+
+    private long uncompressedByteSize(List<LogFileSegment> logFileSegments) {
+        if ( logFileSegments.isEmpty())
+            return 0L;
+        long total = 0L;
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            for (LogFileSegment segment : logFileSegments) {
+                ZipEntry entry = zipfile.getEntry(segment.getSegmentName());
+                // the uncompressed size is unknown, and reported as -1, for some entries
+                if ( entry != null && !entry.isDirectory() && entry.getSize() > 0L)
+                    total += entry.getSize();
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine the size of the log segments.", ioe);
+            return 0L;
+        }
+        return total;
     }
 
     /**
@@ -119,20 +191,31 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverSegments();
+        orderSegments();
+    }
+
+    /**
+     * Discover the log file segments on disk without imposing an order on them. The
+     * path is either a directory holding the set of segments or a single member of a
+     * rotating set, in which case its siblings are matched against the root pattern.
+     * @return the discovered segments, empty if they could not be listed.
+     */
+    private List<LogFileSegment> discoverSegments() {
+        List<LogFileSegment> discovered = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(discovered::add);
             }
             else {
                 Files.list(getPath().getParent())
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                        .map(p -> new GCLogFileSegment(p)).forEach(discovered::add);
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discovered;
     }
 
     private void orderSegments() {
