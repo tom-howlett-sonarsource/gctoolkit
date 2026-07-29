@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Phaser;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
  * The base implementation of JavaVirtualMachine that uses the message API to feed
@@ -178,7 +179,9 @@ public abstract class AbstractJavaVirtualMachine implements JavaVirtualMachine {
 
         try {
             if (finishLine.getRegisteredParties() > 0) {
-                dataSource.stream().forEach(message -> dataSourceBus.publish(ChannelName.DATA_SOURCE, message));
+                try (Stream<String> stream = dataSource.stream()) {
+                    stream.forEach(message -> dataSourceBus.publish(ChannelName.DATA_SOURCE, message));
+                }
                 finishLine.awaitAdvance(0);
             } else {
                 LOGGER.log(Level.INFO, "No Aggregations have been registered, DataSource will not be analysed.");

@@ -96,13 +96,15 @@ public abstract class GCLogFile extends FileDataSource<String> {
     public Diary diary() throws IOException {
         if ( diary == null) {
             Diarizer diarizer = diarizer();
-            stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(s -> s.length() > 0)
-                    .map(diarizer::diarize)
-                    .filter(completed -> completed)
-                    .findFirst();
+            try (Stream<String> stream = stream()) {
+                stream
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> s.length() > 0)
+                        .map(diarizer::diarize)
+                        .filter(completed -> completed)
+                        .findFirst();
+            }
             this.diary = diarizer.getDiary();
         }
         return diary;
