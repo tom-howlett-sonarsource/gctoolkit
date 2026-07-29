@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -39,6 +40,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else {
                 LOG.warning("unknown log file format");
                 segments = new ArrayList<>();
+                discoveredSegments = new ArrayList<>();
             }
         }
         return segments.stream();
@@ -54,7 +56,20 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
+    }
+
+    /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the segment currently being written to. Unlike {@link #logFiles()},
+     * this reflects every segment found during discovery, regardless of whether
+     * {@link #orderSegments()} was able to place it in the chronological order.
+     * @return The total byte size of all segments, or {@code 0L} if there are none.
+     */
+    public long getTotalByteSize() {
+        logFiles();
+        return discoveredSegments.stream().mapToLong(LogFileSegment::getByteSize).sum();
     }
 
     /**
@@ -132,6 +147,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
     }
 
@@ -163,7 +179,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     private List<LogFileSegment> removeIneligibleSegments(final List<LogFileSegment> logFileSegments, final LogFileSegment current) {
         return logFileSegments.stream()
-                .filter( segment -> segment.getEndTime() <= current.getStartTime())
+                .filter( segment -> segment != current && segment.getEndTime() <= current.getStartTime())
                 .collect(toList());
     }
 }
