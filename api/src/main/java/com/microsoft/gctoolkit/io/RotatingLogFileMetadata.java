@@ -45,8 +45,13 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
+        segments = discoverZIPSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
+            return zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
@@ -54,7 +59,26 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
-        orderSegments();
+        return new ArrayList<>();
+    }
+
+    /**
+     * Return the combined byte size of every discovered log file segment, including
+     * the segment currently being written to. For zip files, the uncompressed size
+     * of each non-directory entry is used. This total is independent of
+     * {@link #orderSegments()}, so it is unaffected by segments that the ordering
+     * step is unable to place.
+     * @return The total byte size of all discovered segments, or {@code 0L} if none are found.
+     */
+    public long getTotalByteSize() {
+        List<LogFileSegment> discovered;
+        if (isZip())
+            discovered = discoverZIPSegments();
+        else if (isPlainText() || isDirectory())
+            discovered = discoverFileSegments();
+        else
+            discovered = new ArrayList<>();
+        return discovered.stream().mapToLong(LogFileSegment::getByteSize).sum();
     }
 
     /**
@@ -119,20 +143,28 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverFileSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverFileSegments() {
+        List<LogFileSegment> discovered = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (var files = Files.list(getPath())) {
+                    files.map(GCLogFileSegment::new).forEach(discovered::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                try (var files = Files.list(getPath().getParent())) {
+                    files.filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                            .map(GCLogFileSegment::new).forEach(discovered::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discovered;
     }
 
     private void orderSegments() {

@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -26,6 +27,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOG = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -52,6 +55,21 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     public String getSegmentName() {
         return this.segmentName;
+    }
+
+    /**
+     * Return the uncompressed size, in bytes, of the underlying zip entry.
+     * @return The uncompressed size, in bytes, of the zip entry, or {@code 0L} if it cannot be read.
+     */
+    @Override
+    public long getByteSize() {
+        try (ZipFile file = new ZipFile(path.toFile())) {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            return entry == null ? 0L : entry.getSize();
+        } catch (IOException e) {
+            LOG.warning(e.getMessage());
+            return 0L;
+        }
     }
 
     private void ageOfJVMAtLogStart() {
