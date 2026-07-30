@@ -58,6 +58,65 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the file currently being written to. For Zip files, the
+     * uncompressed size of each non-directory entry is used.
+     * @return The total byte size of all segments, or {@code 0L} if none were found.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipByteSize();
+        if (isDirectory())
+            return directoryByteSize();
+        if (isPlainText())
+            return memberByteSize();
+        return 0L;
+    }
+
+    private long zipByteSize() {
+        try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size > 0)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    private long directoryByteSize() {
+        try (Stream<Path> files = Files.list(getPath())) {
+            return files.mapToLong(RotatingLogFileMetadata::sizeOf).sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to compute total byte size.", ioe);
+            return 0L;
+        }
+    }
+
+    private long memberByteSize() {
+        String rootPattern = getRootPattern();
+        try (Stream<Path> files = Files.list(getPath().getParent())) {
+            return files.filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                    .mapToLong(RotatingLogFileMetadata::sizeOf)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to compute total byte size.", ioe);
+            return 0L;
+        }
+    }
+
+    private static long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
