@@ -13,5 +13,6 @@ public interface LogFileSegment {
     String getSegmentName();
     double getStartTime();
     double getEndTime();
+    long getSize();
     Stream<String> stream();
 }

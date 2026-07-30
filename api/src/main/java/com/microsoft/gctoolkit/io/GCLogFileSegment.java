@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
@@ -21,6 +23,8 @@ import java.util.stream.Stream;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileSegment implements LogFileSegment {
+
+    private static final Logger LOG = Logger.getLogger(GCLogFileSegment.class.getName());
 
     private final Path path;
     private final int segmentIndex;
@@ -104,6 +108,20 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public int getSegmentIndex() {
         return segmentIndex;
+    }
+
+    /**
+     * Return the size, in bytes, of the underlying file.
+     * @return The size of the file, or {@code 0L} if the size could not be determined.
+     */
+    @Override
+    public long getSize() {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine size of " + path, ioe);
+        }
+        return 0L;
     }
 
     /**

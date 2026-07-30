@@ -54,6 +54,22 @@ public class GCLogFileZipSegment implements LogFileSegment {
         return this.segmentName;
     }
 
+    /**
+     * Return the uncompressed size, in bytes, of the corresponding zip entry.
+     * @return The uncompressed size of the entry, or {@code 0L} if the size could not be determined.
+     */
+    @Override
+    public long getSize() {
+        try (ZipFile file = new ZipFile(path.toFile())) {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            if (entry != null && entry.getSize() >= 0)
+                return entry.getSize();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return 0L;
+    }
+
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
             startTime = stream()
