@@ -127,6 +127,19 @@ public class GCLogFileSegment implements LogFileSegment {
         return current;
     }
 
+    /**
+     * Return the size, in bytes, of this log file segment.
+     * @return The size in bytes, or {@code 0} if the size could not be determined.
+     */
+    @Override
+    public long getSizeInBytes() {
+        try {
+            return Files.size(path);
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
     private DateTimeStamp ageOfJVMAtLogStart() {
         if (startTime == null) {
             startTime = stream()

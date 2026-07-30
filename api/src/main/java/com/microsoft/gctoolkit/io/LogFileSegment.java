@@ -14,4 +14,5 @@ public interface LogFileSegment {
     double getStartTime();
     double getEndTime();
     Stream<String> stream();
+    long getSizeInBytes();
 }

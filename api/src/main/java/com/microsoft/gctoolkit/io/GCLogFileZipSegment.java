@@ -138,6 +138,20 @@ public class GCLogFileZipSegment implements LogFileSegment {
     }
 
     /**
+     * Return the uncompressed size, in bytes, of this log file segment's zip entry.
+     * @return The uncompressed size in bytes, or {@code 0} if the size could not be determined.
+     */
+    @Override
+    public long getSizeInBytes() {
+        try (ZipFile file = new ZipFile(path.toFile())) {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            return entry == null ? 0L : Math.max(entry.getSize(), 0L);
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
+    /**
      * {@inheritDoc}
      * @return Returns {@code this.getPath().toString(); }
      */
