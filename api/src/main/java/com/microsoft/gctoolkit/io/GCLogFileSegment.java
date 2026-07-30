@@ -107,6 +107,19 @@ public class GCLogFileSegment implements LogFileSegment {
     }
 
     /**
+     * Return the size, in bytes, of the file backing this segment.
+     * @return The size, in bytes, of the segment, or {@code 0} if the size could not be determined.
+     */
+    @Override
+    public long getByteSize() {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            return 0L;
+        }
+    }
+
+    /**
      * Stream the file, one line at a time.
      * @return A stream of lines from the file.
      */
