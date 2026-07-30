@@ -5,6 +5,7 @@ package com.microsoft.gctoolkit.io;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
@@ -13,6 +14,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -26,6 +29,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOGGER = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -56,19 +61,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> stream = stream()) {
+                startTime = stream
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> stream = stream()) {
+                tail = stream.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -130,11 +139,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
         try {
             ZipFile file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            return reader.lines().onClose(() -> {
+                closeQuietly(reader);
+                closeQuietly(file);
+            });
         } catch (IOException e) {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Unable to close " + closeable, e);
+        }
     }
 
     /**
