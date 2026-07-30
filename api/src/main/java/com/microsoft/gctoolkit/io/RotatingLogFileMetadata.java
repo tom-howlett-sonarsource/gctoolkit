@@ -58,6 +58,55 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment, including
+     * the active log. For Zip files, this is the sum of the uncompressed sizes of the
+     * non-directory entries.
+     * @return The total byte size of the discovered log segments, or {@code 0L} if none were found.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return getZipTotalByteSize();
+        if (isDirectory() || isPlainText())
+            return getSegmentFilesByteSize();
+        return 0L;
+    }
+
+    private long getSegmentFilesByteSize() {
+        try (Stream<Path> paths = isDirectory() ? Files.list(getPath()) : findRotatingSegmentPaths()) {
+            return paths.mapToLong(this::getFileByteSize).sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, ioe, () -> "Unable to find log segments.");
+            return 0L;
+        }
+    }
+
+    private Stream<Path> findRotatingSegmentPaths() throws IOException {
+        return Files.list(getPath().getParent())
+                .filter(file -> file.getFileName().toString().startsWith(getRootPattern()));
+    }
+
+    private long getFileByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, ioe, () -> "Unable to determine size of log segment: " + path.getFileName());
+            return 0L;
+        }
+    }
+
+    private long getZipTotalByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(zipEntry -> Math.max(zipEntry.getSize(), 0L))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
