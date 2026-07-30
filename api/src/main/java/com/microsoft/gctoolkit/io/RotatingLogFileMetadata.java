@@ -58,6 +58,45 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the log currently being written to. For Zip files, this is
+     * the sum of the uncompressed sizes of the non-directory entries. Segment
+     * discovery is not affected by whether {@link #orderSegments()} is able to
+     * order the segments, so unparsable log content does not drop segments
+     * from the total.
+     * @return The combined byte size of the discovered segments, or {@code 0L}
+     * if there are no eligible entries.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipByteSize();
+        return discoverSegmentsForSizing().stream()
+                .mapToLong(RotatingLogFileMetadata::segmentByteSize)
+                .sum();
+    }
+
+    private long zipByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    private static long segmentByteSize(LogFileSegment segment) {
+        try {
+            return Files.size(segment.getPath());
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
@@ -133,6 +172,29 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
         orderSegments();
+    }
+
+    /**
+     * Discover the log segments for the byte size calculation, independent of
+     * {@link #findSegments()} and {@link #orderSegments()}, so that log
+     * content that can't be parsed into a start/end time does not cause a
+     * segment to be dropped from the total.
+     */
+    private List<LogFileSegment> discoverSegmentsForSizing() {
+        List<LogFileSegment> discovered = new ArrayList<>();
+        try {
+            if (isDirectory()) {
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(discovered::add);
+            }
+            else if (isPlainText()) {
+                Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                        .map(p -> (LogFileSegment) new GCLogFileSegment(p)).forEach(discovered::add);
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
+        }
+        return discovered;
     }
 
     private void orderSegments() {
