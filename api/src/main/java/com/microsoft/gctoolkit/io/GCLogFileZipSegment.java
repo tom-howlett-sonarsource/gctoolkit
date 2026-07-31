@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,19 +57,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -127,14 +132,35 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
+        ZipFile file = null;
         try {
-            ZipFile file = new ZipFile(path.toFile());
+            file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            ZipFile archive = file;
+            return reader.lines().onClose(() -> {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                } finally {
+                    closeQuietly(archive);
+                }
+            });
         } catch (IOException e) {
             e.printStackTrace();
+            closeQuietly(file);
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void closeQuietly(ZipFile file) {
+        if (file != null) {
+            try {
+                file.close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     /**
