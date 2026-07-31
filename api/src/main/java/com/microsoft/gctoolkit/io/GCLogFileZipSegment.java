@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,19 +57,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> stream = stream()) {
+                startTime = stream
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> stream = stream()) {
+                tail = stream.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -128,13 +133,37 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return streamEntry(new ZipFile(path.toFile()));
         } catch (IOException e) {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    @SuppressWarnings("resource") // file and reader are closed via the returned stream's onClose handler
+    private Stream<String> streamEntry(ZipFile file) throws IOException {
+        try {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            return reader.lines().onClose(() -> closeSegment(reader, file));
+        } catch (IOException e) {
+            file.close();
+            throw e;
+        }
+    }
+
+    private static void closeSegment(BufferedReader reader, ZipFile file) {
+        try {
+            reader.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } finally {
+            try {
+                file.close();
+            } catch (IOException ignored) {
+                // reader.close() above already released the entry stream; a failure here is not actionable.
+            }
+        }
     }
 
     /**
