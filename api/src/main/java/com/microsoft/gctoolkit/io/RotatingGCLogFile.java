@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -14,6 +15,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -87,28 +89,45 @@ public class RotatingGCLogFile extends GCLogFile {
     @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
+            List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+            try {
+                entries
+                        .stream()
+                        .map(entry -> {
+                            try {
+                                return zipFile.getInputStream(entry);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .forEach(streams::add);
+            } catch (UncheckedIOException uioe) {
+                throw uioe.getCause();
+            }
+
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            ZipFile fileToClose = zipFile;
+            return reader.lines().onClose(() -> {
+                closeQuietly(reader);
+                closeQuietly(fileToClose);
+            });
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipFile);
+            throw e;
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Unable to close " + closeable, e);
+        }
     }
 
     /**
