@@ -67,18 +67,24 @@ public class SingleGCLogFile extends GCLogFile {
 
     }
 
+    // The reader must outlive this method: it is only closed when the caller closes
+    // the returned Stream, via the onClose handler below.
+    @SuppressWarnings("resource")
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
         ZipEntry entry;
         do {
             entry = zipStream.getNextEntry();
         } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+        return reader.lines().onClose(() -> CloseableResources.closeAll(reader));
     }
 
+    @SuppressWarnings("resource")
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return reader.lines().onClose(() -> CloseableResources.closeAll(reader));
     }
 
 }
