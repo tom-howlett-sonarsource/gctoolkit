@@ -103,12 +103,19 @@ public class RotatingGCLogFile extends GCLogFile {
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
         } catch (UncheckedIOException uioe) {
+            zipFile.close();
             throw uioe.getCause();
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+        return reader.lines().onClose(() -> {
+            try (zipFile) {
+                reader.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
     /**
