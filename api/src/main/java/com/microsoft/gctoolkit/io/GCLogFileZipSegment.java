@@ -2,21 +2,18 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogSourceStreams;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -26,6 +23,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOG = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -79,17 +78,14 @@ public class GCLogFileZipSegment implements LogFileSegment {
         return endTime;
     }
 
+    /**
+     * A collector that retains the last {@code n} lines of the segment.
+     * @param n The number of lines to retain.
+     * @param <T> The type of the elements in the stream.
+     * @return A collector returning the last {@code n} elements of the stream.
+     */
     public <T> Collector<T, ?, List<T>> tail(int n) {
-        return Collector.<T, Deque<T>, List<T>>of(ArrayDeque::new, (buffer, line) -> {
-            if(buffer.size() == n)
-                buffer.pollFirst();
-            buffer.add(line);
-        }, (buffer, list) -> {
-            while(list.size() < n && !buffer.isEmpty()) {
-                list.addFirst(buffer.pollLast());
-            }
-            return list;
-        }, ArrayList::new);
+        return LogSourceStreams.lastLines(n);
     }
 
     @Override
@@ -128,11 +124,9 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return LogSourceStreams.zipEntryLines(path, segmentName);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.log(Level.WARNING, "Unable to read " + segmentName + " in " + path, e);
         }
         return new ArrayList<String>().stream();
     }
