@@ -2,21 +2,20 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.GCLogSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -27,7 +26,10 @@ import java.util.zip.ZipFile;
  */
 public class GCLogFileZipSegment implements LogFileSegment {
 
+    private static final Logger LOGGER = Logger.getLogger(GCLogFileZipSegment.class.getName());
+
     private final Path path;
+    private final GCLogSource source;
     private final String segmentName;
     private DateTimeStamp endTime = null;
     private DateTimeStamp startTime = null;
@@ -39,6 +41,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public GCLogFileZipSegment(Path path, String segmentName) {
         this.path = path;
+        this.source = new GCLogSource(path);
         this.segmentName = segmentName;
     }
 
@@ -128,11 +131,9 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return source.streamZipEntry(this.segmentName);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.WARNING, e, () -> "Unable to stream " + segmentName + " in " + path);
         }
         return new ArrayList<String>().stream();
     }
