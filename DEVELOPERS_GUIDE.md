@@ -4,7 +4,7 @@
 
 ## Introduction
 
-GCToolkit is comprised of 3 Java modules, vertx, parser, and api. This document describes how each of these modules fits together to support the conversion of a garbage collection log to a stream of garbage collection events.
+GCToolkit is comprised of 4 Java modules, vertx, parser, api, and logsource. This document describes how each of these modules fits together to support the conversion of a garbage collection log to a stream of garbage collection events.
 Additionally, GCToolkit contains several components that perform the heavy lifting. These components include, a framework to interact with data sources, diary, data source bus, parsers, and event source bus and finally, a framework to support the aggregation of events.
 The purpose of this document is to provide a brief description of each of these components to aid in the further development of this toolkit.
 
@@ -24,6 +24,8 @@ The gctoolkit-vertx module retains the implementation support for messaging for 
 ### Data Source 
 
 DataSource is an interface that allows one to define specializations for a source of GC events that maybe of interest. Currently the toolkit contains two data sources, a FileDataSource and a SafepointLogFile. A GClogFile is a specialization of a FileDataSource. This is in turn has two specializations, SingleGCLogFile and RotatingGCLogFile. Each of these concrete implementations are comprised of either a GCLogFileSegment or a GCLogZipFile Segment. The accepted formats currently are, a directory (for all files in that directory or a randomly chosen file for the SingleGCLogFile), zip (for all files in the zip that match the base name found in the zip, or the first zipsegment for SingleGCLogFIle), GZip (for a single file), an individual file, or rotating log (as defined by the base name). Each of the concrete classes take care of the details of being able to create a continuous stream of their contents.
+
+The gctoolkit-logsource module holds the code that reads log sources from the file system. It discovers the format of a source (a directory, plain text, zip or gzip), reports the size of a source in bytes, opens a stream of the lines held in a source, and reads the tail of a source. Both gctoolkit-api and gctoolkit-parser use it so that every data source reads logs in the same way.
 
 Another role of the DataSource is to provide a Diary (or summary) of important features found in the data. This includes information such as, is the log unified or a pre-unified, which version of the JVM produced the log, which flags where used to produce the file, which collector (combinations) are in play and so on. This information is used to construct the data paths through GCToolkit. It may also be used by clients of GCToolkit for their own purposes. For example, analytics may use the information to modulate how they process data.
 
