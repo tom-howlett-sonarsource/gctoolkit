@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.gclogsource.GCLogSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 public class GCLogFileSegment implements LogFileSegment {
 
     private final Path path;
+    private final GCLogSource source;
     private final int segmentIndex;
     private final boolean current;
     private DateTimeStamp endTime = null;
@@ -34,6 +35,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public GCLogFileSegment(Path path) {
         this.path = path;
+        this.source = GCLogSource.from(path);
 
         String filename = path.getFileName().toString();
         Matcher matcher = ROTATING_LOG_PATTERN.matcher(filename);
@@ -112,7 +114,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return source.lines();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -170,7 +172,8 @@ public class GCLogFileSegment implements LogFileSegment {
         boolean foundEOL = false;
         char eol = 0;
         RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
+        long fileSize = source.sizeInBytes();
+        long currentPosition = fileSize - 1;
         int linesFound = 0;
 
         while (currentPosition > 0 && !foundEOL) {
@@ -190,7 +193,7 @@ public class GCLogFileSegment implements LogFileSegment {
                 currentPosition--;
         }
 
-        currentPosition = randomAccessFile.length() - 1;
+        currentPosition = fileSize - 1;
 
         while (currentPosition > 0 && linesFound < numberOfLines) {
             randomAccessFile.seek(--currentPosition);
