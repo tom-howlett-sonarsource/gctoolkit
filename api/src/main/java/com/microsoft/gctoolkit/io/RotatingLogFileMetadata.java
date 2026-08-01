@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogFileSources;
+
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,8 +13,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
 
@@ -45,15 +44,14 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
-                    .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
-                    .map(name -> new GCLogFileZipSegment(getPath(),name))
-                    .collect(toList());
+        List<LogFileSegment> found = new ArrayList<>();
+        try {
+            LogFileSources.zipEntryNames(getPath())
+                    .forEach(name -> found.add(new GCLogFileZipSegment(getPath(), name)));
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
+        segments = found;
         orderSegments();
     }
 
@@ -121,14 +119,10 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private void findSegments() {
         segments = new ArrayList<>();
         try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+            List<Path> sources = isDirectory()
+                    ? LogFileSources.filesIn(getPath())
+                    : LogFileSources.siblingsStartingWith(getPath(), getRootPattern());
+            sources.stream().map(GCLogFileSegment::new).forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }

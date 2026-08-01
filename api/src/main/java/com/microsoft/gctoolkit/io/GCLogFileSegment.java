@@ -2,13 +2,12 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogFileStreams;
+import com.microsoft.gctoolkit.logsource.LogFileTail;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
@@ -21,6 +20,9 @@ import java.util.stream.Stream;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileSegment implements LogFileSegment {
+
+    /** How much of the end of the segment is read when looking for the time the segment ends. */
+    private static final int TAIL_LINES = 100;
 
     private final Path path;
     private final int segmentIndex;
@@ -112,7 +114,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogFileStreams.plainTextLines(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -140,7 +142,7 @@ public class GCLogFileSegment implements LogFileSegment {
 
     private DateTimeStamp ageOfJVMAtLogEnd() throws IOException {
         if (endTime == null) {
-            endTime = tail(100).stream()
+            endTime = LogFileTail.lastLines(path, TAIL_LINES).stream()
                     .map(DateTimeStamp::fromGCLogLine)
                     .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
                     .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? dateTimeStamp.getTimeStamp() : 0))
@@ -156,56 +158,5 @@ public class GCLogFileSegment implements LogFileSegment {
     @Override
     public String toString() {
         return getSegmentName();
-    }
-
-
-     // todo: implementation may be a bit ugly...
-     // https://codereview.stackexchange.com/questions/79039/get-the-tail-of-a-file-the-last-10-lines
-     // Tail is not a class, it's a method so the solution in stackoverflow isn't correct but the core
-     // could be used here as it's cleaner
-    private ArrayList<String> tail(int numberOfLines) throws IOException {
-
-        char LF = '\n';
-        char CR = '\r';
-        boolean foundEOL = false;
-        char eol = 0;
-        RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
-        int linesFound = 0;
-
-        while (currentPosition > 0 && !foundEOL) {
-            randomAccessFile.seek(currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (character == LF) {
-                eol = LF;
-                randomAccessFile.seek(currentPosition - 1);
-                character = (char) randomAccessFile.readByte();
-                if (character == CR)
-                    eol = CR;
-                foundEOL = true;
-            } else if (character == CR && !foundEOL) {
-                eol = CR;
-                foundEOL = true;
-            } else
-                currentPosition--;
-        }
-
-        currentPosition = randomAccessFile.length() - 1;
-
-        while (currentPosition > 0 && linesFound < numberOfLines) {
-            randomAccessFile.seek(--currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (eol == character)
-                linesFound++;
-        }
-
-        ArrayList<String> lines = new ArrayList<>();
-        if (linesFound > 0) {
-            String line;
-            while ((line = randomAccessFile.readLine()) != null) {
-                lines.add(line);
-            }
-        }
-        return lines;
     }
 }
