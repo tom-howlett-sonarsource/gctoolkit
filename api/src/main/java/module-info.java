@@ -31,6 +31,8 @@ import com.microsoft.gctoolkit.jvm.UnifiedJavaVirtualMachine;
  */
 module com.microsoft.gctoolkit.api {
     requires java.logging;
+    // transitive because LogFileMetadata reports the format of a log file with a logsource type
+    requires transitive com.microsoft.gctoolkit.logsource;
 
     exports com.microsoft.gctoolkit;
     exports com.microsoft.gctoolkit.aggregator;
