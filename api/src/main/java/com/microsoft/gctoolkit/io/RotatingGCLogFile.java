@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -84,13 +85,11 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
+            List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
             entries
                     .stream()
                     .map(entry -> {
@@ -102,13 +101,34 @@ public class RotatingGCLogFile extends GCLogFile {
                     })
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            return reader.lines()
+                    .onClose(() -> close(reader))
+                    .onClose(() -> close(zipFile));
         } catch (UncheckedIOException uioe) {
+            closeAfterFailure(zipFile, uioe);
             throw uioe.getCause();
+        } catch (RuntimeException | Error failure) {
+            closeAfterFailure(zipFile, failure);
+            throw failure;
         }
+    }
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+    private static void close(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
+    }
+
+    private static void closeAfterFailure(ZipFile zipFile, Throwable failure) {
+        try {
+            zipFile.close();
+        } catch (IOException ioe) {
+            failure.addSuppressed(ioe);
+        }
     }
 
     /**
