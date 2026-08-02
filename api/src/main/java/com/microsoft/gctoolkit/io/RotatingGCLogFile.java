@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -47,16 +48,62 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        LogFileMetadata metadata = getMetaData();
+        if (metadata.isZip()) {
+            List<Stream<String>> segmentStreams = new ArrayList<>();
+            try (Stream<LogFileSegment> segments = metadata.logFiles()) {
+                segments
+                    .map(LogFileSegment::stream)
                     .filter(Objects::nonNull)
+                    .forEach(segmentStreams::add);
+            } catch (RuntimeException | Error failure) {
+                closeStreamsAfterFailure(segmentStreams, failure);
+                throw failure;
+            }
+
+            Stream<String> lines = segmentStreams.stream()
+                    .flatMap(stream -> stream)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> closeStreams(segmentStreams));
+        } else if (metadata.isDirectory() || metadata.isPlainText()) {
+            return Stream.concat(
+                    metadata.logFiles()
+                            .flatMap(LogFileSegment::stream)
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(s -> s.length() > 0),
                     Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+        } else {
             return Stream.of(endOfData());
+        }
+    }
+
+    private static void closeStreams(List<Stream<String>> streams) {
+        RuntimeException failure = null;
+        for (Stream<String> stream : streams) {
+            try {
+                stream.close();
+            } catch (RuntimeException closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static void closeStreamsAfterFailure(List<Stream<String>> streams, Throwable failure) {
+        try {
+            closeStreams(streams);
+        } catch (RuntimeException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
