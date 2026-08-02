@@ -72,6 +72,54 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of all discovered log segments. ZIP entries
+     * contribute their uncompressed size.
+     *
+     * @return the total byte size, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine total log size.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) {
+            return 0L;
+        }
+
+        Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        try (Stream<Path> paths = Files.list(directory)) {
+            Stream<Path> eligiblePaths = paths.filter(Files::isRegularFile);
+            if (isPlainText()) {
+                String rootPattern = getRootPattern();
+                eligiblePaths = eligiblePaths
+                        .filter(path -> path.getFileName().toString().startsWith(rootPattern));
+            }
+            return eligiblePaths.mapToLong(this::getFileSize).sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine total log size.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getFileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
