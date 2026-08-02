@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -69,6 +70,80 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of every log segment that would be discovered for this
+     * data source, including the log currently being written to. For a ZIP file this is the
+     * sum of the uncompressed sizes of all of the non-directory entries.
+     *
+     * @return The total number of bytes held by the rotating log, or {@code 0} if there are
+     * no eligible segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return totalZipEntrySize();
+        else if (isPlainText() || isDirectory())
+            return totalSegmentFileSize();
+        LOG.warning("unknown log file format");
+        return 0L;
+    }
+
+    private long totalZipEntrySize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(zipEntry -> uncompressedSize(zipfile, zipEntry))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    /**
+     * The size recorded in the entry is authoritative when present. Entries written with a
+     * streamed (data descriptor) header report {@code -1}, in which case the entry has to be
+     * inflated to find out how big it is.
+     */
+    private long uncompressedSize(ZipFile zipfile, ZipEntry zipEntry) {
+        long size = zipEntry.getSize();
+        if (size >= 0L)
+            return size;
+        try (InputStream inputStream = zipfile.getInputStream(zipEntry)) {
+            long total = 0L;
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = inputStream.read(buffer)) > 0)
+                total += read;
+            return total;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to size zip entry " + zipEntry.getName(), ioe);
+            return 0L;
+        }
+    }
+
+    private long totalSegmentFileSize() {
+        try (Stream<Path> files = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))) {
+            return files.filter(Files::isRegularFile)
+                    .mapToLong(this::sizeOf)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+        }
+        return 0L;
+    }
+
+    private long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to size log segment " + file, ioe);
+            return 0L;
+        }
     }
 
     /**
