@@ -4,11 +4,14 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
@@ -69,16 +72,45 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipStream);
+            throw e;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        InputStream fileStream = Files.newInputStream(path);
+        try {
+            GZIPInputStream gzipStream = new GZIPInputStream(fileStream);
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (IOException | RuntimeException e) {
+            // A malformed header leaves the file open unless it is closed here.
+            closeQuietly(fileStream);
+            throw e;
+        }
+    }
+
+    /**
+     * Lines from the reader, with the reader (and the whole decompression chain beneath it,
+     * down to the file descriptor) released when the returned stream is closed. Without this,
+     * a caller that closes a partially consumed stream would leak the underlying archive.
+     */
+    private static Stream<String> lines(BufferedReader reader) {
+        return reader.lines().onClose(() -> closeQuietly(reader));
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ioe) {
+            LOGGER.log(Level.WARNING, "Unable to close " + closeable, ioe);
+        }
     }
 
 }
