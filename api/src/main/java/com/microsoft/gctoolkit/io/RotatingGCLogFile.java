@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -14,6 +15,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,16 +50,47 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // Segment streams are opened lazily as the composed stream is consumed. Keep a
+            // reference to each one so that closing the composed stream releases the resources
+            // of the segment being read, even when it has only been partially consumed.
+            List<Stream<String>> openSegments = new CopyOnWriteArrayList<>();
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream == null)
+                            return Stream.empty();
+                        openSegments.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> closeAll(openSegments));
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+    }
+
+    /**
+     * Close every segment stream that was opened while streaming this log file. Closing a
+     * stream that has already been closed, for example by {@code flatMap} once the segment
+     * was fully consumed, is a no-op.
+     */
+    private static void closeAll(List<Stream<String>> segmentStreams) {
+        RuntimeException failure = null;
+        for (Stream<String> segmentStream : segmentStreams) {
+            try {
+                segmentStream.close();
+            } catch (RuntimeException e) {
+                LOGGER.log(Level.WARNING, "Unable to close log file segment", e);
+                if (failure == null)
+                    failure = e;
+            }
+        }
+        segmentStreams.clear();
+        if (failure != null)
+            throw failure;
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -84,31 +118,47 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
+            List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+            try {
+                entries
+                        .stream()
+                        .map(entry -> {
+                            try {
+                                return zipFile.getInputStream(entry);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .forEach(streams::add);
+            } catch (UncheckedIOException uioe) {
+                throw uioe.getCause();
+            }
+
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            // closing the returned stream closes the entry streams and the archive they came from.
+            return reader.lines().onClose(() -> {
+                closeQuietly(reader);
+                closeQuietly(zipFile);
+            });
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipFile);
+            throw e;
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ioe) {
+            LOGGER.log(Level.WARNING, "Unable to close log file resource", ioe);
+        }
     }
 
     /**
