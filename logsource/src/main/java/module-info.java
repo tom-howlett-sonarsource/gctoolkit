@@ -1,0 +1,13 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/**
+ * Contains the utilities shared by the GCToolKit API and parser modules for discovering
+ * log sources, reporting their size in bytes, and opening plain text, ZIP and GZIP logs
+ * as a stream of lines.
+ */
+module com.microsoft.gctoolkit.logsource {
+    requires java.logging;
+
+    exports com.microsoft.gctoolkit.logsource;
+}

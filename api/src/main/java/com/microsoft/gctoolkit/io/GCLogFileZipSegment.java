@@ -2,16 +2,15 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogSources;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.List;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
@@ -80,16 +79,7 @@ public class GCLogFileZipSegment implements LogFileSegment {
     }
 
     public <T> Collector<T, ?, List<T>> tail(int n) {
-        return Collector.<T, Deque<T>, List<T>>of(ArrayDeque::new, (buffer, line) -> {
-            if(buffer.size() == n)
-                buffer.pollFirst();
-            buffer.add(line);
-        }, (buffer, list) -> {
-            while(list.size() < n && !buffer.isEmpty()) {
-                list.addFirst(buffer.pollLast());
-            }
-            return list;
-        }, ArrayList::new);
+        return LogSources.tailCollector(n);
     }
 
     @Override
