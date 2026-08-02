@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.shared.io.GCLogSource;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -17,8 +18,6 @@ import java.util.Vector;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A collection of rotating GC log files. The collection will contain only those files that can be
@@ -86,24 +85,9 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
-        ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
         Vector<InputStream> streams = new Vector<>();
-
-        try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
+        for (String entry : GCLogSource.entries(path)) {
+            streams.add(GCLogSource.open(path, entry));
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
