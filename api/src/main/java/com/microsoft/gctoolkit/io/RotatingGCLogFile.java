@@ -14,11 +14,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+
+import static com.microsoft.gctoolkit.io.StreamResources.closeQuietly;
 
 /**
  * A collection of rotating GC log files. The collection will contain only those files that can be
@@ -47,16 +50,30 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // flatMap closes each segment stream as it is exhausted, but the segment being read
+            // when a partially consumed stream is closed would otherwise be left open. Track the
+            // segment streams as they are opened so that closing the composed stream closes them
+            // all. Closing an already closed segment stream is a no-op.
+            List<Stream<String>> openSegments = new CopyOnWriteArrayList<>();
             return Stream.concat(
                     getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+                    .flatMap(segment -> openSegment(segment, openSegments))
                     .filter(Objects::nonNull)
                     .map(String::trim)
                     .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    Stream.of(endOfData()))
+                    .onClose(() -> closeQuietly(openSegments));
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+    }
+
+    private static Stream<String> openSegment(LogFileSegment segment, List<Stream<String>> openSegments) {
+        Stream<String> lines = segment.stream();
+        if (lines == null)
+            return Stream.empty();
+        openSegments.add(lines);
+        return lines;
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -84,31 +101,39 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
+            List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+            try {
+                entries
+                        .stream()
+                        .map(entry -> {
+                            try {
+                                return zipFile.getInputStream(entry);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        })
+                        .filter(Objects::nonNull)
+                        .forEach(streams::add);
+            } catch (UncheckedIOException uioe) {
+                throw uioe.getCause();
+            }
+
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            return reader.lines().onClose(() -> {
+                closeQuietly(reader);
+                closeQuietly(zipFile);
+            });
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipFile);
+            throw e;
+        }
     }
 
     /**

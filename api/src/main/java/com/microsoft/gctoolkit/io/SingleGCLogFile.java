@@ -5,6 +5,7 @@ package com.microsoft.gctoolkit.io;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,8 @@ import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import static com.microsoft.gctoolkit.io.StreamResources.closeQuietly;
 
 /**
  * A single GC log file. If the file is a zip or gzip file,
@@ -68,17 +71,39 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        InputStream fileStream = Files.newInputStream(path);
+        try {
+            ZipInputStream zipStream = new ZipInputStream(fileStream);
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(fileStream);
+            throw e;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        InputStream fileStream = Files.newInputStream(path);
+        try {
+            GZIPInputStream gzipStream = new GZIPInputStream(fileStream);
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(fileStream);
+            throw e;
+        }
+    }
+
+    /**
+     * Stream the lines of the reader, releasing the reader, and with it the archive it
+     * decodes, when the stream is closed. Closing the stream is the only way the caller
+     * has of releasing these resources, so the close handler must be attached here rather
+     * than left to the caller.
+     */
+    private static Stream<String> lines(BufferedReader reader) {
+        return reader.lines().onClose(() -> closeQuietly(reader));
     }
 
 }
