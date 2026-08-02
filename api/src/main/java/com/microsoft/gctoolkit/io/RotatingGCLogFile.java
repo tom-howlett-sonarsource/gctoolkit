@@ -3,17 +3,21 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,16 +51,50 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // flatMap closes a segment stream once it has been exhausted, but a caller that closes
+            // a partially consumed stream would otherwise leak the segment that is still in flight.
+            // Track the segment streams that have been opened so that closing the composed stream
+            // closes them all. Stream.close() is idempotent, so re-closing an exhausted segment is
+            // harmless.
+            List<Stream<String>> openedSegments = Collections.synchronizedList(new ArrayList<>());
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream == null)
+                            return Stream.empty();
+                        openedSegments.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
+                    .filter(s -> s.length() > 0)
+                    .onClose(() -> closeAll(openedSegments));
+            return Stream.concat(lines, Stream.of(endOfData()));
+        }
         else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+    }
+
+    private static void closeAll(List<Stream<String>> streams) {
+        List<Stream<String>> snapshot;
+        synchronized (streams) {
+            snapshot = new ArrayList<>(streams);
+            streams.clear();
+        }
+        RuntimeException failure = null;
+        for (Stream<String> stream : snapshot) {
+            try {
+                stream.close();
+            } catch (RuntimeException e) {
+                if (failure == null)
+                    failure = e;
+                else
+                    failure.addSuppressed(e);
+            }
+        }
+        if (failure != null)
+            throw failure;
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -103,12 +141,33 @@ public class RotatingGCLogFile extends GCLogFile {
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
         } catch (UncheckedIOException uioe) {
+            closeQuietly(zipFile);
             throw uioe.getCause();
+        } catch (RuntimeException re) {
+            closeQuietly(zipFile);
+            throw re;
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException ioe) {
+                throw new UncheckedIOException(ioe);
+            } finally {
+                closeQuietly(zipFile);
+            }
+        });
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ioe) {
+            LOGGER.log(Level.WARNING, "Unable to close archive", ioe);
+        }
     }
 
     /**

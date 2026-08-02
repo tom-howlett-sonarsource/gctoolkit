@@ -4,11 +4,14 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
@@ -69,16 +72,49 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipStream);
+            throw e;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        try {
+            return lines(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (RuntimeException e) {
+            closeQuietly(gzipStream);
+            throw e;
+        }
+    }
+
+    /**
+     * Lines from the reader, with the reader (and the decompression stream and file handle
+     * it wraps) released when the returned stream is closed. {@code BufferedReader.lines()}
+     * on its own leaves the reader open, even when the stream is only partially consumed.
+     */
+    private static Stream<String> lines(BufferedReader reader) {
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException ioe) {
+                throw new UncheckedIOException(ioe);
+            }
+        });
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ioe) {
+            LOGGER.log(Level.WARNING, "Unable to close " + closeable, ioe);
+        }
     }
 
 }
