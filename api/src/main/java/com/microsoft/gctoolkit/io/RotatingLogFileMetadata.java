@@ -45,8 +45,13 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
+        segments = discoverZIPSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
+            return zipfile.stream()
                     .filter(zipEntry -> !zipEntry.isDirectory())
                     .map(ZipEntry::getName)
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
@@ -54,7 +59,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
-        orderSegments();
+        return new ArrayList<>();
     }
 
     /**
@@ -69,6 +74,69 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined size, in bytes, of every rotating log segment that can be
+     * discovered from the path this meta-data was created with. This includes the log
+     * currently being written to. For a Zip file, the sum is of the uncompressed sizes
+     * of all of the (non-directory) entries.
+     *
+     * @return The total number of bytes held in the log segments, or {@code 0L} if
+     * there are no eligible segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return totalZipEntrySize();
+        if (isPlainText() || isDirectory())
+            return discoverSegments().stream()
+                    .map(LogFileSegment::getPath)
+                    .mapToLong(RotatingLogFileMetadata::sizeOf)
+                    .sum();
+        LOG.warning("unknown log file format");
+        return 0L;
+    }
+
+    private static long sizeOf(Path path) {
+        try {
+            return Files.isRegularFile(path) ? Files.size(path) : 0L;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine the size of " + path, ioe);
+            return 0L;
+        }
+    }
+
+    private long totalZipEntrySize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(zipEntry -> uncompressedSize(zipfile, zipEntry))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return 0L;
+    }
+
+    /**
+     * The uncompressed size is normally recorded in the Zip central directory. When it
+     * isn't, fall back to inflating the entry and counting the bytes.
+     */
+    private static long uncompressedSize(ZipFile zipfile, ZipEntry zipEntry) {
+        long size = zipEntry.getSize();
+        if (size >= 0L)
+            return size;
+        try (var input = zipfile.getInputStream(zipEntry)) {
+            long count = 0L;
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) > -1)
+                count += read;
+            return count;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine the size of " + zipEntry.getName(), ioe);
+            return 0L;
+        }
     }
 
     /**
@@ -119,20 +187,25 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverSegments() {
+        List<LogFileSegment> discovered = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(discovered::add);
             }
             else {
                 Files.list(getPath().getParent())
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                        .map(p -> new GCLogFileSegment(p)).forEach(discovered::add);
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discovered;
     }
 
     private void orderSegments() {
