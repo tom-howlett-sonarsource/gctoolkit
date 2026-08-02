@@ -2,14 +2,13 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogFileStreams;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
@@ -112,7 +111,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogFileStreams.plainTextLines(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -159,53 +158,7 @@ public class GCLogFileSegment implements LogFileSegment {
     }
 
 
-     // todo: implementation may be a bit ugly...
-     // https://codereview.stackexchange.com/questions/79039/get-the-tail-of-a-file-the-last-10-lines
-     // Tail is not a class, it's a method so the solution in stackoverflow isn't correct but the core
-     // could be used here as it's cleaner
-    private ArrayList<String> tail(int numberOfLines) throws IOException {
-
-        char LF = '\n';
-        char CR = '\r';
-        boolean foundEOL = false;
-        char eol = 0;
-        RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
-        int linesFound = 0;
-
-        while (currentPosition > 0 && !foundEOL) {
-            randomAccessFile.seek(currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (character == LF) {
-                eol = LF;
-                randomAccessFile.seek(currentPosition - 1);
-                character = (char) randomAccessFile.readByte();
-                if (character == CR)
-                    eol = CR;
-                foundEOL = true;
-            } else if (character == CR && !foundEOL) {
-                eol = CR;
-                foundEOL = true;
-            } else
-                currentPosition--;
-        }
-
-        currentPosition = randomAccessFile.length() - 1;
-
-        while (currentPosition > 0 && linesFound < numberOfLines) {
-            randomAccessFile.seek(--currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (eol == character)
-                linesFound++;
-        }
-
-        ArrayList<String> lines = new ArrayList<>();
-        if (linesFound > 0) {
-            String line;
-            while ((line = randomAccessFile.readLine()) != null) {
-                lines.add(line);
-            }
-        }
-        return lines;
+    private List<String> tail(int numberOfLines) throws IOException {
+        return LogFileStreams.tail(path, numberOfLines);
     }
 }
