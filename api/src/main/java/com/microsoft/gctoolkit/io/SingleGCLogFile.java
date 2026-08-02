@@ -4,11 +4,13 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
@@ -69,16 +71,43 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return linesClosing(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(zipStream);
+            throw e;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        try {
+            return linesClosing(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (RuntimeException e) {
+            closeQuietly(gzipStream);
+            throw e;
+        }
+    }
+
+    /**
+     * {@code BufferedReader.lines()} does not close the reader when the stream is closed. Bind the
+     * two together so that closing the returned stream releases the whole chain of underlying
+     * streams, including the file handle on the archive.
+     */
+    private static Stream<String> linesClosing(BufferedReader reader) {
+        return reader.lines().onClose(() -> closeQuietly(reader));
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Unable to close log file stream", e);
+        }
     }
 
 }
