@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -51,6 +52,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
                     .map(ZipEntry::getName)
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
                     .collect(toList());
+            discoveredSegments = new ArrayList<>(segments);
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
@@ -69,6 +71,45 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined uncompressed byte size of all discovered log segments.
+     *
+     * @return The combined byte size, or {@code 0L} when no eligible segments exist.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to calculate log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (segments == null)
+            logFiles();
+
+        List<LogFileSegment> eligibleSegments = discoveredSegments == null ? segments : discoveredSegments;
+        return eligibleSegments.stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(this::getFileSize)
+                .sum();
+    }
+
+    private long getFileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to calculate log segment size.", ioe);
+            return 0L;
+        }
     }
 
     /**
@@ -132,6 +173,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
     }
 
