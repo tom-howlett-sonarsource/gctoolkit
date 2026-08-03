@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private final List<Path> discoveredSegmentPaths = new ArrayList<>();
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,42 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of all discovered log segments. ZIP entries
+     * are measured by their uncompressed size.
+     *
+     * @return combined byte size of the discovered log segments
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP log size.", ioe);
+                return 0L;
+            }
+        }
+
+        logFiles();
+        return discoveredSegmentPaths.stream()
+                .filter(Files::isRegularFile)
+                .mapToLong(this::getByteSize)
+                .sum();
+    }
+
+    private long getByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
     }
 
     /**
@@ -132,6 +169,9 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        segments.stream()
+                .map(LogFileSegment::getPath)
+                .forEach(discoveredSegmentPaths::add);
         orderSegments();
     }
 
