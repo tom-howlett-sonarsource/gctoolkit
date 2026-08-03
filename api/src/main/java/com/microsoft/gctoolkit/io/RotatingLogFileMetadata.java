@@ -72,6 +72,58 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined uncompressed byte size of all discovered log segments.
+     *
+     * @return total byte size, or {@code 0L} when no eligible segments are found
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (isDirectory()) {
+            return getDiscoveredFileSize(getPath(), null);
+        }
+        if (isPlainText()) {
+            return getDiscoveredFileSize(getPath().getParent(), getRootPattern());
+        }
+        return 0L;
+    }
+
+    private long getDiscoveredFileSize(Path directory, String rootPattern) {
+        if (directory == null) {
+            return 0L;
+        }
+        try (Stream<Path> paths = Files.list(directory)) {
+            return paths
+                    .filter(path -> rootPattern == null || path.getFileName().toString().startsWith(rootPattern))
+                    .mapToLong(this::getFileSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getFileSize(Path path) {
+        try {
+            return Files.isRegularFile(path) ? Files.size(path) : 0L;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
