@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.io.source.LogSource;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import static java.util.stream.Collectors.toList;
 
@@ -45,10 +43,8 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findZIPSegments() {
-        try (var zipfile = new ZipFile(getPath().toFile())) {
-            segments = zipfile.stream()
-                    .filter(zipEntry -> !zipEntry.isDirectory())
-                    .map(ZipEntry::getName)
+        try {
+            segments = LogSource.discoverZipEntries(getPath()).stream()
                     .map(name -> new GCLogFileZipSegment(getPath(),name))
                     .collect(toList());
         } catch (IOException ioe) {
@@ -122,10 +118,10 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                LogSource.discover(getPath()).stream().map(GCLogFileSegment::new).forEach(segments::add);
             }
             else {
-                Files.list(getPath().getParent())
+                LogSource.discover(getPath().getParent()).stream()
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
                         .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
             }
