@@ -4,6 +4,7 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
@@ -69,16 +70,31 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+            return reader.lines().onClose(() -> close(reader));
+        } catch (IOException | RuntimeException exception) {
+            zipStream.close();
+            throw exception;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return reader.lines().onClose(() -> close(reader));
+    }
+
+    private static void close(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        }
     }
 
 }
