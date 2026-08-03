@@ -4,9 +4,6 @@ package com.microsoft.gctoolkit.io;
 
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -15,8 +12,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+
+import com.microsoft.gctoolkit.io.source.LogSource;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -128,10 +125,8 @@ public class GCLogFileZipSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
-        } catch (IOException e) {
+            return LogSource.lines(path, segmentName);
+        } catch (java.io.IOException e) {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();

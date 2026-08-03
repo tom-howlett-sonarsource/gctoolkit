@@ -6,12 +6,13 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
+
+import com.microsoft.gctoolkit.io.source.LogSource;
 
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
@@ -112,7 +113,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogSource.lines(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
