@@ -72,6 +72,54 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined size, in bytes, of all discovered log segments.
+     * ZIP entries are measured by their uncompressed size.
+     *
+     * @return combined byte size, or {@code 0L} when no eligible segments exist
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) {
+            return 0L;
+        }
+
+        Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        try (Stream<Path> paths = Files.list(directory)) {
+            Stream<Path> discoveredPaths = isDirectory()
+                    ? paths
+                    : paths.filter(path -> path.getFileName().toString().startsWith(getRootPattern()));
+            return discoveredPaths
+                    .filter(Files::isRegularFile)
+                    .mapToLong(this::fileSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long fileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
