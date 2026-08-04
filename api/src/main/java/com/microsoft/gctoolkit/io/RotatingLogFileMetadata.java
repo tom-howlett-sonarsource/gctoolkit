@@ -24,6 +24,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
+    private final List<LogFileSegment> discoveredSegments = new ArrayList<>();
     private List<LogFileSegment> segments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
@@ -69,6 +70,50 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of all rotating log segments.
+     *
+     * @return the combined byte size, or {@code 0L} when there are no eligible segments
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return getTotalUncompressedByteSize();
+
+        if (segments == null) {
+            if (isPlainText() || isDirectory())
+                findSegments();
+            else
+                return 0L;
+        }
+
+        return discoveredSegments.stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(this::getByteSize)
+                .sum();
+    }
+
+    private long getTotalUncompressedByteSize() {
+        try (var zipFile = new ZipFile(getPath().toFile())) {
+            return zipFile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
     }
 
     /**
@@ -122,16 +167,22 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (Stream<Path> paths = Files.list(getPath())) {
+                    paths.map(GCLogFileSegment::new).forEach(segments::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                try (Stream<Path> paths = Files.list(getPath().getParent())) {
+                    paths.filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                            .map(GCLogFileSegment::new)
+                            .forEach(segments::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments.clear();
+        discoveredSegments.addAll(segments);
         orderSegments();
     }
 
