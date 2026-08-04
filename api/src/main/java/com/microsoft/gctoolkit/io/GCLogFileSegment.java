@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.shared.io.LogFileSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -112,7 +112,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return new LogFileSource(path).lines();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -129,11 +129,13 @@ public class GCLogFileSegment implements LogFileSegment {
 
     private DateTimeStamp ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
+            try (Stream<String> lines = stream()) {
+                startTime = lines
                     .map(DateTimeStamp::fromGCLogLine)
                     .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
                     .findFirst()
                     .orElse(new DateTimeStamp(-1.0d));
+            }
         }
         return startTime;
     }
