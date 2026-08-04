@@ -2,23 +2,15 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.SequenceInputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Vector;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A collection of rotating GC log files. The collection will contain only those files that can be
@@ -47,16 +39,26 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
+        LogFileMetadata metadata = getMetaData();
+        if (metadata.isDirectory() || metadata.isPlainText() || metadata.isZip()) {
+            Stream<String> segments = concatenate(metadata.logFiles());
             return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+                    segments
                     .filter(Objects::nonNull)
                     .map(String::trim)
                     .filter(s -> s.length() > 0),
                     Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+        } else { // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+        }
+    }
+
+    private Stream<String> concatenate(Stream<LogFileSegment> segments) {
+        return segments
+                .map(LogFileSegment::stream)
+                .filter(Objects::nonNull)
+                .reduce(Stream::concat)
+                .orElseGet(Stream::empty);
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -84,31 +86,8 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
-        ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
-        try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
-
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        return concatenate(getMetaData().logFiles());
     }
 
     /**
