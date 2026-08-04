@@ -2,23 +2,18 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.SequenceInputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.LinkedList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Vector;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import java.util.stream.StreamSupport;
 
 /**
  * A collection of rotating GC log files. The collection will contain only those files that can be
@@ -47,68 +42,95 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            SegmentLineSpliterator lines = new SegmentLineSpliterator(getMetaData().logFiles());
+            Stream<String> segmentLines = StreamSupport.stream(lines, false).onClose(lines::close);
+            return Stream.concat(segmentLines
                     .filter(Objects::nonNull)
                     .map(String::trim)
                     .filter(s -> s.length() > 0),
                     Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+        } else { // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+        }
     }
 
-    private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
-        //todo: find rolling files....
-        if (metadata.isPlainText() || metadata.isDirectory()) {
-            switch (segments.size()) {
-                case 0:
-                    String[] empty = new String[0];
-                    return Arrays.stream(empty);
-                case 1:
-                    return segments.getFirst().stream();
-                default:
-                    // This code removes elements from the list of segments, so work on a copy.
-                    LinkedList<GCLogFileSegment> copySegments = new LinkedList<>(segments);
-                    Stream<String> allSegments = Stream.concat(copySegments.removeFirst().stream(), copySegments.removeFirst().stream());
-                    while (!copySegments.isEmpty())
-                        allSegments = Stream.concat(allSegments, copySegments.removeFirst().stream());
-                    return allSegments;
+    private static final class SegmentLineSpliterator extends Spliterators.AbstractSpliterator<String>
+            implements AutoCloseable {
+
+        private final Stream<LogFileSegment> segments;
+        private final Iterator<LogFileSegment> segmentIterator;
+        private Stream<String> currentStream;
+        private Iterator<String> currentIterator;
+        private boolean closed;
+
+        private SegmentLineSpliterator(Stream<LogFileSegment> segments) {
+            super(Long.MAX_VALUE, Spliterator.ORDERED);
+            this.segments = segments;
+            this.segmentIterator = segments.iterator();
+        }
+
+        @Override
+        public boolean tryAdvance(Consumer<? super String> action) {
+            Objects.requireNonNull(action);
+            if (closed) {
+                return false;
             }
-        } else if (metadata.isZip()) {
-            return streamZipFile();
-        } else if (metadata.isGZip()) {
-            throw new IOException("Unable to stream GZip files. Please unzip and retry");
-        }
-        throw new IOException("Unrecognised file type");
-    }
 
-    @SuppressWarnings("resource")
-    private Stream<String> streamZipFile() throws IOException {
-        ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
+            while (true) {
+                if (currentIterator != null && currentIterator.hasNext()) {
+                    action.accept(currentIterator.next());
+                    return true;
+                }
 
-        try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
+                closeCurrentStream();
+                if (!segmentIterator.hasNext()) {
+                    close();
+                    return false;
+                }
+
+                currentStream = segmentIterator.next().stream();
+                currentIterator = currentStream == null ? null : currentStream.iterator();
+            }
         }
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+
+            RuntimeException failure = null;
+            try {
+                closeCurrentStream();
+            } catch (RuntimeException rte) {
+                failure = rte;
+            }
+            try {
+                segments.close();
+            } catch (RuntimeException rte) {
+                if (failure == null) {
+                    failure = rte;
+                } else {
+                    failure.addSuppressed(rte);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        private void closeCurrentStream() {
+            if (currentStream != null) {
+                try {
+                    currentStream.close();
+                } finally {
+                    currentStream = null;
+                    currentIterator = null;
+                }
+            }
+        }
     }
 
     /**
