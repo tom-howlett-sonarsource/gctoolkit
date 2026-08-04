@@ -72,6 +72,51 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of all rotating log segments. ZIP entries are
+     * measured by their uncompressed size.
+     *
+     * @return the combined byte size, or {@code 0L} when no segments are eligible
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP entry sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) return 0L;
+
+        Path segmentDirectory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        try (Stream<Path> paths = Files.list(segmentDirectory)) {
+            Stream<Path> discoveredPaths = isDirectory()
+                    ? paths
+                    : paths.filter(path -> path.getFileName().toString().startsWith(getRootPattern()));
+            return discoveredPaths
+                    .filter(Files::isRegularFile)
+                    .mapToLong(this::getFileSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getFileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
