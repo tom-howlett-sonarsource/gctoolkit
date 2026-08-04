@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,44 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of the discovered rotating log segments.
+     * ZIP entries are measured by their uncompressed sizes.
+     *
+     * @return the combined byte size, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP entry sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        logFiles();
+        List<LogFileSegment> segmentsToSize = discoveredSegments == null ? segments : discoveredSegments;
+        return segmentsToSize.stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(this::getByteSize)
+                .sum();
+    }
+
+    private long getByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
     }
 
     /**
@@ -132,6 +171,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
     }
 
