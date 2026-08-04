@@ -72,6 +72,60 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of all discovered log file segments.
+     * ZIP entries contribute their uncompressed sizes.
+     *
+     * @return the combined byte size, or {@code 0L} when no eligible entries exist
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return getZIPTotalByteSize();
+        }
+        if (isPlainText() || isDirectory()) {
+            return getFileSystemTotalByteSize();
+        }
+        return 0L;
+    }
+
+    private long getFileSystemTotalByteSize() {
+        boolean directoryInput = isDirectory();
+        Path searchDirectory = directoryInput ? getPath() : getPath().toAbsolutePath().getParent();
+        String rootPattern = directoryInput ? "" : getRootPattern();
+
+        try (Stream<Path> files = Files.list(searchDirectory)) {
+            return files
+                .filter(Files::isRegularFile)
+                .filter(file -> directoryInput || file.getFileName().toString().startsWith(rootPattern))
+                .mapToLong(this::getByteSize)
+                .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getZIPTotalByteSize() {
+        try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+            return zipFile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine ZIP entry sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
