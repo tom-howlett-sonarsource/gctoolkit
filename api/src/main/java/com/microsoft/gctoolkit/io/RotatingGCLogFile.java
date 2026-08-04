@@ -10,13 +10,18 @@ import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.Vector;
 import java.util.logging.Logger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -47,16 +52,114 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            Stream<String> segments = concatenate(getMetaData().logFiles())
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(
+                    segments,
                     Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+        } else { // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+        }
+    }
+
+    private static Stream<String> concatenate(Stream<LogFileSegment> segments) {
+        SegmentStreamSpliterator spliterator = new SegmentStreamSpliterator(segments);
+        return StreamSupport.stream(spliterator, false).onClose(spliterator::close);
+    }
+
+    private static final class SegmentStreamSpliterator extends Spliterators.AbstractSpliterator<String>
+            implements AutoCloseable {
+
+        private final Stream<LogFileSegment> segments;
+        private final Iterator<LogFileSegment> segmentIterator;
+        private Stream<String> currentStream;
+        private Iterator<String> currentIterator;
+        private boolean segmentsClosed;
+        private boolean closed;
+
+        private SegmentStreamSpliterator(Stream<LogFileSegment> segments) {
+            super(Long.MAX_VALUE, Spliterator.ORDERED);
+            this.segments = segments;
+            this.segmentIterator = segments.iterator();
+        }
+
+        @Override
+        public boolean tryAdvance(Consumer<? super String> action) {
+            Objects.requireNonNull(action);
+            if (closed) {
+                return false;
+            }
+
+            while (true) {
+                if (currentIterator != null && currentIterator.hasNext()) {
+                    action.accept(currentIterator.next());
+                    return true;
+                }
+
+                closeCurrentStream();
+                if (!segmentIterator.hasNext()) {
+                    closeSegments();
+                    closed = true;
+                    return false;
+                }
+
+                currentStream = segmentIterator.next().stream();
+                currentIterator = currentStream == null ? null : currentStream.iterator();
+            }
+        }
+
+        @Override
+        public Spliterator<String> trySplit() {
+            return null;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+
+            RuntimeException failure = null;
+            try {
+                closeCurrentStream();
+            } catch (RuntimeException e) {
+                failure = e;
+            }
+
+            try {
+                closeSegments();
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+            closed = true;
+
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        private void closeCurrentStream() {
+            Stream<String> stream = currentStream;
+            currentStream = null;
+            currentIterator = null;
+            if (stream != null) {
+                stream.close();
+            }
+        }
+
+        private void closeSegments() {
+            if (!segmentsClosed) {
+                segmentsClosed = true;
+                segments.close();
+            }
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
