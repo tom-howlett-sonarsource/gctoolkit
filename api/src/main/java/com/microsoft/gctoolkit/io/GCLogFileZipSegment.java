@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,24 +57,31 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> !s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp()
+                                || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? dateTimeStamp.getTimeStamp() : 0))
+                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp()
+                            || dateTimeStamp.hasDateStamp())
+                    .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null
+                            ? dateTimeStamp.getTimeStamp() : 0))
                     .orElse(DateTimeStamp.EMPTY_DATE);
         }
         return endTime;
@@ -129,12 +137,44 @@ public class GCLogFileZipSegment implements LogFileSegment {
     public Stream<String> stream() {
         try {
             ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            try {
+                ZipEntry entry = file.getEntry(this.segmentName);
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(file.getInputStream(entry)));
+                return reader.lines().onClose(() -> close(reader, file));
+            } catch (IOException | RuntimeException exception) {
+                try {
+                    file.close();
+                } catch (IOException closeException) {
+                    exception.addSuppressed(closeException);
+                }
+                throw exception;
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void close(final BufferedReader reader, final ZipFile file) {
+        IOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException exception) {
+            failure = exception;
+        }
+        try {
+            file.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw new UncheckedIOException(failure);
+        }
     }
 
     /**
