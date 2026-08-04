@@ -67,18 +67,29 @@ public class SingleGCLogFile extends GCLogFile {
 
     }
 
-    private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+    private static Stream<String> streamZipFile(final Path path) throws IOException {
+        ZipInputStream zipStream = new ZipInputStream(
+                Files.newInputStream(path));
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new BufferedInputStream(zipStream)));
+            return ResourceClosingStreams.lines(reader, zipStream);
+        } catch (IOException | RuntimeException | Error failure) {
+            ResourceClosingStreams.closeOnFailure(failure, zipStream);
+            throw failure;
+        }
     }
 
-    private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+    private static Stream<String> streamGZipFile(final Path path) throws IOException {
+        GZIPInputStream gzipStream = new GZIPInputStream(
+                Files.newInputStream(path));
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return ResourceClosingStreams.lines(reader, gzipStream);
     }
 
 }
