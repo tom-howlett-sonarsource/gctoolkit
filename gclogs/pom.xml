@@ -11,10 +11,10 @@
     </parent>
 
     <artifactId>gctoolkit-gclogs</artifactId>
-    <description>GCToolkit test gclogs downloader</description>
+    <description>Shared GC log source utilities and test gclogs downloader</description>
     <url>${project.parent.url}</url>
     <name>GCToolKit GCLogs</name>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
 
     <properties>
         <gctoolkit-testdata-version>1.0.12</gctoolkit-testdata-version>
@@ -22,20 +22,6 @@
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.commonjava.maven.plugins</groupId>
                 <artifactId>directory-maven-plugin</artifactId>
