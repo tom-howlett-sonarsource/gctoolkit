@@ -87,10 +87,11 @@ public class RotatingGCLogFile extends GCLogFile {
     @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
+            List<ZipEntry> entries = zipFile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
             entries
                     .stream()
                     .map(entry -> {
@@ -102,13 +103,17 @@ public class RotatingGCLogFile extends GCLogFile {
                     })
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+            return StreamResources.closeWith(reader.lines(), reader, zipFile);
+        } catch (UncheckedIOException uioe) {
+            StreamResources.closeAfterFailure(uioe, zipFile);
+            throw uioe.getCause();
+        } catch (RuntimeException failure) {
+            StreamResources.closeAfterFailure(failure, zipFile);
+            throw failure;
+        }
     }
 
     /**
