@@ -72,6 +72,66 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of the discovered log file segments.
+     * ZIP entries contribute their uncompressed sizes.
+     *
+     * @return the combined byte size, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return getTotalZIPByteSize();
+        }
+
+        if (isDirectory() || isPlainText()) {
+            return getTotalFileByteSize();
+        }
+
+        return 0L;
+    }
+
+    private long getTotalFileByteSize() {
+        Path directory = isDirectory() ? getPath() : getPath().getParent();
+        if (directory == null) {
+            directory = getPath().toAbsolutePath().getParent();
+        }
+        String rootPattern = isDirectory() ? null : getRootPattern();
+
+        try (Stream<Path> files = Files.list(directory)) {
+            return files
+                    .filter(Files::isRegularFile)
+                    .filter(path -> rootPattern == null
+                            || path.getFileName().toString().startsWith(rootPattern))
+                    .mapToLong(this::getByteSize)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to calculate log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getTotalZIPByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to calculate ZIP log size.", ioe);
+            return 0L;
+        }
+    }
+
+    private long getByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to calculate log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
