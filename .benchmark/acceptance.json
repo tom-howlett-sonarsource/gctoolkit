@@ -1,0 +1,14 @@
+{
+  "command": [
+    "mvn",
+    "--batch-mode",
+    "-pl",
+    "api",
+    "-am",
+    "-Dtest=VisibleZipStreamResourceLifecycleTest",
+    "-Dsurefire.failIfNoSpecifiedTests=false",
+    "test"
+  ],
+  "schema_version": "2.0",
+  "task": "zip-stream-resource-lifecycle"
+}

@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -107,8 +108,19 @@ public class RotatingGCLogFile extends GCLogFile {
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+
+        return reader.lines()
+                .onClose(() -> close(reader))
+                .onClose(() -> close(zipFile));
+    }
+
+    private static void close(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
     }
 
     /**

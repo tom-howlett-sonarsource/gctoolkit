@@ -5,8 +5,10 @@ package com.microsoft.gctoolkit.io;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,25 +58,28 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
-            endTime = tail.stream()
-                    .filter(line -> ! line.contains("Saved as"))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? dateTimeStamp.getTimeStamp() : 0))
-                    .orElse(DateTimeStamp.EMPTY_DATE);
+            try (Stream<String> lines = stream()) {
+                List<String> tail = lines.collect(tail(100));
+                endTime = tail.stream()
+                        .filter(line -> ! line.contains("Saved as"))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .max(Comparator.comparing(dateTimeStamp -> dateTimeStamp != null ? dateTimeStamp.getTimeStamp() : 0))
+                        .orElse(DateTimeStamp.EMPTY_DATE);
+            }
         }
         return endTime;
     }
@@ -127,14 +132,37 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
+        ZipFile file;
         try {
-            ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            file = new ZipFile(path.toFile());
         } catch (IOException e) {
             e.printStackTrace();
+            return Stream.empty();
         }
-        return new ArrayList<String>().stream();
+
+        try {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            return reader.lines()
+                    .onClose(() -> close(reader))
+                    .onClose(() -> close(file));
+        } catch (IOException e) {
+            try {
+                file.close();
+            } catch (IOException closeException) {
+                e.addSuppressed(closeException);
+            }
+            e.printStackTrace();
+        }
+        return Stream.empty();
+    }
+
+    private static void close(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
     }
 
     /**
