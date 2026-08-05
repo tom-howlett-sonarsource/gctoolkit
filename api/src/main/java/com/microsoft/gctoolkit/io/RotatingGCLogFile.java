@@ -84,31 +84,61 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
         Vector<InputStream> streams = new Vector<>();
 
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
+            List<ZipEntry> entries = zipFile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .collect(Collectors.toList());
+            for (ZipEntry entry : entries) {
+                streams.add(zipFile.getInputStream(entry));
+            }
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            return reader.lines().onClose(() -> close(reader, zipFile));
+        } catch (IOException | RuntimeException | Error failure) {
+            closeAfterFailure(streams, zipFile, failure);
+            throw failure;
+        }
+    }
+
+    private static void close(BufferedReader reader, ZipFile zipFile) {
+        UncheckedIOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException ioe) {
+            failure = new UncheckedIOException(ioe);
+        }
+        try {
+            zipFile.close();
+        } catch (IOException ioe) {
+            if (failure == null) {
+                failure = new UncheckedIOException(ioe);
+            } else {
+                failure.addSuppressed(ioe);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static void closeAfterFailure(Vector<InputStream> streams, ZipFile zipFile, Throwable failure) {
+        for (InputStream stream : streams) {
+            try {
+                stream.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+        }
+        try {
+            zipFile.close();
+        } catch (IOException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
     /**
