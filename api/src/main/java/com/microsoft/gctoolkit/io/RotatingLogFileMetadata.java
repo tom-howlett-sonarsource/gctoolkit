@@ -72,6 +72,40 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined uncompressed size of all discovered log segments.
+     *
+     * @return total size of the log segments in bytes
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+        if (!isPlainText() && !isDirectory()) return 0L;
+
+        return discoverFileSegments().stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException ioe) {
+                        LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+                        return 0L;
+                    }
+                })
+                .sum();
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
@@ -119,20 +153,29 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverFileSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverFileSegments() {
+        List<LogFileSegment> discoveredSegments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (Stream<Path> paths = Files.list(getPath())) {
+                    paths.map(GCLogFileSegment::new).forEach(discoveredSegments::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                try (Stream<Path> paths = Files.list(getPath().getParent())) {
+                    paths.filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                            .map(GCLogFileSegment::new)
+                            .forEach(discoveredSegments::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discoveredSegments;
     }
 
     private void orderSegments() {
