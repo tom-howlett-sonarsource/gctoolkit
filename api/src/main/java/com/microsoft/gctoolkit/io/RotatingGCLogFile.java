@@ -13,7 +13,9 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,16 +49,46 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if (getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            Queue<Stream<String>> openedSegmentStreams = new ConcurrentLinkedQueue<>();
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream == null) {
+                            return Stream.empty();
+                        }
+                        openedSegmentStreams.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> closeStreams(openedSegmentStreams));
+        } else { // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+        }
+    }
+
+    private static void closeStreams(Iterable<Stream<String>> streams) {
+        Throwable failure = null;
+        for (Stream<String> stream : streams) {
+            try {
+                stream.close();
+            } catch (RuntimeException | Error closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        if (failure instanceof Error) {
+            throw (Error) failure;
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -84,31 +116,59 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
         Vector<InputStream> streams = new Vector<>();
-
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
+            List<ZipEntry> entries = zipFile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .collect(Collectors.toList());
+            for (ZipEntry entry : entries) {
+                streams.add(zipFile.getInputStream(entry));
+            }
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            return reader.lines().onClose(() -> close(reader, zipFile));
+        } catch (IOException | RuntimeException | Error failure) {
+            closeAfterFailure(streams, zipFile, failure);
+            throw failure;
         }
+    }
 
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+    private static void close(BufferedReader reader, ZipFile zipFile) {
+        IOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException ioe) {
+            failure = ioe;
+        }
+        try {
+            zipFile.close();
+        } catch (IOException ioe) {
+            if (failure == null) {
+                failure = ioe;
+            } else {
+                failure.addSuppressed(ioe);
+            }
+        }
+        if (failure != null) {
+            throw new UncheckedIOException(failure);
+        }
+    }
+
+    private static void closeAfterFailure(List<InputStream> streams, ZipFile zipFile, Throwable failure) {
+        for (InputStream stream : streams) {
+            try {
+                stream.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+        }
+        try {
+            zipFile.close();
+        } catch (IOException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
     /**
