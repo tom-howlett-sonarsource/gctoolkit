@@ -58,6 +58,40 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Returns the combined byte size of all discovered log file segments.
+     *
+     * @return the combined byte size, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ignored) {
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) {
+            return 0L;
+        }
+
+        try (Stream<Path> paths = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(path -> path.getFileName().toString().startsWith(getRootPattern()))) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> path.toFile().length())
+                    .sum();
+        } catch (IOException ignored) {
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
