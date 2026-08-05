@@ -84,7 +84,6 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
         List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
@@ -103,12 +102,39 @@ public class RotatingGCLogFile extends GCLogFile {
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
         } catch (UncheckedIOException uioe) {
+            try {
+                zipFile.close();
+            } catch (IOException closeException) {
+                uioe.getCause().addSuppressed(closeException);
+            }
             throw uioe.getCause();
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+
+        return reader.lines().onClose(() -> close(reader, zipFile));
+    }
+
+    private static void close(BufferedReader reader, ZipFile archive) {
+        IOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException exception) {
+            failure = exception;
+        }
+        try {
+            archive.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw new UncheckedIOException(failure);
+        }
     }
 
     /**

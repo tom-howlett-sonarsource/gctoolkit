@@ -69,16 +69,48 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+            return reader.lines().onClose(() -> close(reader, zipStream));
+        } catch (IOException | RuntimeException exception) {
+            try {
+                zipStream.close();
+            } catch (IOException closeException) {
+                exception.addSuppressed(closeException);
+            }
+            throw exception;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return reader.lines().onClose(() -> close(reader, gzipStream));
+    }
+
+    private static void close(BufferedReader reader, java.io.Closeable archiveStream) {
+        IOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException exception) {
+            failure = exception;
+        }
+        try {
+            archiveStream.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw new java.io.UncheckedIOException(failure);
+        }
     }
 
 }
