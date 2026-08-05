@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.FileInputStream;
+import com.microsoft.gctoolkit.shared.io.LogFileSource;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.logging.Logger;
@@ -23,10 +24,12 @@ public abstract class LogFileMetadata {
 
     private FileFormat fileFormat = FileFormat.UNKNOWN;
     private final Path path;
+    private final LogFileSource source;
 
     public LogFileMetadata(Path path) throws IOException {
         this.path = path;
-        magic();
+        source = LogFileSource.discover(path);
+        discoverFormat();
     }
 
     public Path getPath() {
@@ -34,10 +37,8 @@ public abstract class LogFileMetadata {
     }
 
     boolean magic(int field1, int field2) {
-        try (FileInputStream magicByteReader = new FileInputStream(path.toFile())) {
-            int magicByte1 = magicByteReader.read();
-            int magicByte2 = magicByteReader.read();
-            return magicByte1 == field1 && magicByte2 == field2;
+        try {
+            return LogFileSource.hasMagic(path, field1, field2);
         } catch (IOException ioe) {
             LOG.warning(ioe.getMessage());
         }
@@ -46,15 +47,27 @@ public abstract class LogFileMetadata {
 
     public abstract Stream<LogFileSegment> logFiles();
 
-    private void magic() {
-        if (getPath().toFile().isDirectory())
-            fileFormat = FileFormat.DIRECTORY;
-        else if ( magic(GZIP_MAGIC1, GZIP_MAGIC2))
-            fileFormat = FileFormat.GZIP;
-        else if ( magic(ZIP_MAGIC1, ZIP_MAGIC2))
-            fileFormat = FileFormat.ZIP;
-        else
-            fileFormat = FileFormat.PLAINTEXT;
+    private void discoverFormat() {
+        switch (source.format()) {
+            case DIRECTORY:
+                fileFormat = FileFormat.DIRECTORY;
+                break;
+            case GZIP:
+                fileFormat = FileFormat.GZIP;
+                break;
+            case ZIP:
+                fileFormat = FileFormat.ZIP;
+                break;
+            case PLAIN_TEXT:
+                fileFormat = FileFormat.PLAINTEXT;
+                break;
+            default:
+                fileFormat = FileFormat.UNKNOWN;
+        }
+    }
+
+    Stream<String> stream() throws IOException {
+        return source.lines();
     }
 
     /**
