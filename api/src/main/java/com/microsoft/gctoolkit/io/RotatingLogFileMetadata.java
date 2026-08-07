@@ -22,6 +22,42 @@ import static java.util.stream.Collectors.toList;
  */
 public class RotatingLogFileMetadata extends LogFileMetadata {
 
+    /**
+     * Returns the combined byte size of all discovered log segments.
+     *
+     * @return the total size in bytes, or {@code 0L} when no segments are discovered
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(entry -> Math.max(0L, entry.getSize()))
+                        .sum();
+            } catch (IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            }
+        }
+
+        try (java.util.stream.Stream<Path> paths = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(path -> path.getFileName().toString().startsWith(getRootPattern()))) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException exception) {
+                            throw new java.io.UncheckedIOException(exception);
+                        }
+                    })
+                    .sum();
+        } catch (IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        }
+    }
+
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
