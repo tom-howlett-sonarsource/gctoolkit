@@ -9,11 +9,15 @@ import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,16 +51,43 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            Set<Stream<String>> openSegmentStreams = Collections.newSetFromMap(new ConcurrentHashMap<>());
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> track(segment.stream(), openSegmentStreams))
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> close(openSegmentStreams));
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+    }
+
+    private static Stream<String> track(Stream<String> stream, Set<Stream<String>> openStreams) {
+        if (stream == null) {
+            return Stream.empty();
+        }
+        openStreams.add(stream);
+        return stream.onClose(() -> openStreams.remove(stream));
+    }
+
+    private static void close(Set<Stream<String>> openStreams) {
+        RuntimeException failure = null;
+        for (Stream<String> stream : new ArrayList<>(openStreams)) {
+            try {
+                stream.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
