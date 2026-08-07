@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,39 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of all discovered log segments.
+     * ZIP entries are measured by their uncompressed size.
+     *
+     * @return total byte size, or {@code 0L} when no eligible segments exist
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) {
+            return 0L;
+        }
+
+        if (discoveredSegments == null) {
+            findSegments();
+        }
+
+        return discoveredSegments.stream()
+                .map(LogFileSegment::getPath)
+                .mapToLong(path -> path.toFile().length())
+                .sum();
     }
 
     /**
@@ -132,6 +166,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
     }
 
