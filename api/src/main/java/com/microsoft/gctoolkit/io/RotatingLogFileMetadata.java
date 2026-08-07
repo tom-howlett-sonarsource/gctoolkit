@@ -30,7 +30,41 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         super(path);
     }
 
-    public Stream<LogFileSegment> logFiles() {
+	public long getTotalByteSize() {
+		if (isZip()) {
+			try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+				return zipFile.stream()
+						.filter(entry -> !entry.isDirectory())
+						.mapToLong(java.util.zip.ZipEntry::getSize)
+						.sum();
+			} catch (IOException ioe) {
+				LOG.warning(ioe.getMessage());
+				return 0L;
+			}
+		}
+
+		try (Stream<Path> paths = Files.list(isDirectory() ? getPath() : getPath().getParent())) {
+			Stream<Path> discoveredPaths = isDirectory()
+					? paths
+					: paths.filter(path -> path.getFileName().toString().startsWith(getRootPattern()));
+			return discoveredPaths
+					.filter(Files::isRegularFile)
+					.mapToLong(path -> {
+						try {
+							return Files.size(path);
+						} catch (IOException ioe) {
+							LOG.warning(ioe.getMessage());
+							return 0L;
+						}
+					})
+					.sum();
+		} catch (IOException ioe) {
+			LOG.warning(ioe.getMessage());
+			return 0L;
+		}
+	}
+
+	public Stream<LogFileSegment> logFiles() {
         if ( segments == null) {
             if ( isPlainText() || isDirectory())
                 findSegments();
