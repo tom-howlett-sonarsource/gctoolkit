@@ -72,6 +72,44 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of all discovered log file segments.
+     * ZIP entries contribute their uncompressed size.
+     *
+     * @return combined segment size, or {@code 0L} when there are no eligible segments
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory())
+            return 0L;
+
+        return findSegmentPaths().stream()
+                .filter(path -> !Files.isDirectory(path))
+                .mapToLong(this::size)
+                .sum();
+    }
+
+    private long size(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
@@ -119,20 +157,26 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
-        try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+        segments = findSegmentPaths().stream()
+                .map(GCLogFileSegment::new)
+                .collect(toList());
+        orderSegments();
+    }
+
+    private List<Path> findSegmentPaths() {
+        Path directory = isDirectory() ? getPath() : getPath().getParent();
+        try (Stream<Path> paths = Files.list(directory)) {
+            if (isDirectory())
+                return paths.collect(toList());
+
+            String rootPattern = getRootPattern();
+            return paths
+                    .filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                    .collect(toList());
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
+            return new ArrayList<>();
         }
-        orderSegments();
     }
 
     private void orderSegments() {
