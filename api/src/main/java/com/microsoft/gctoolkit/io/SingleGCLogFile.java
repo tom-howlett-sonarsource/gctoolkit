@@ -4,7 +4,9 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,17 +70,47 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        InputStream inputStream = Files.newInputStream(path);
+        try {
+            ZipInputStream zipStream = new ZipInputStream(inputStream);
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+            return reader.lines().onClose(() -> close(reader));
+        } catch (IOException | RuntimeException | Error failure) {
+            closeAfterFailure(inputStream, failure);
+            throw failure;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        InputStream inputStream = Files.newInputStream(path);
+        try {
+            GZIPInputStream gzipStream = new GZIPInputStream(inputStream);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+            return reader.lines().onClose(() -> close(reader));
+        } catch (IOException | RuntimeException | Error failure) {
+            closeAfterFailure(inputStream, failure);
+            throw failure;
+        }
+    }
+
+    private static void close(Closeable resource) {
+        try {
+            resource.close();
+        } catch (IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        }
+    }
+
+    private static void closeAfterFailure(Closeable resource, Throwable failure) {
+        try {
+            resource.close();
+        } catch (IOException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
 }
