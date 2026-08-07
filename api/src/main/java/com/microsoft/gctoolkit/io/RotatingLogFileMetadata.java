@@ -72,6 +72,54 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined size, in bytes, of all log file segments.
+     * ZIP entries are measured by their uncompressed size.
+     *
+     * @return The combined byte size of all eligible segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!isPlainText() && !isDirectory()) return 0L;
+
+        Path directory = isDirectory() ? getPath() : getPath().getParent();
+        if (directory == null) directory = Path.of(".");
+
+        try (Stream<Path> paths = Files.list(directory)) {
+            Stream<Path> eligiblePaths = paths.filter(Files::isRegularFile);
+            if (!isDirectory()) {
+                String rootPattern = getRootPattern();
+                eligiblePaths = eligiblePaths.filter(path ->
+                        path.getFileName().toString().startsWith(rootPattern));
+            }
+            return eligiblePaths.mapToLong(this::sizeOf).sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
