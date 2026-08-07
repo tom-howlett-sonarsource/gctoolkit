@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,16 +48,44 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            ConcurrentLinkedDeque<Stream<String>> openedSegments = new ConcurrentLinkedDeque<>();
+            Stream<String> lines = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream != null) {
+                            openedSegments.add(segmentStream);
+                        }
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> close(openedSegments));
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
+    }
+
+    private static void close(ConcurrentLinkedDeque<Stream<String>> streams) {
+        Throwable failure = null;
+        Stream<String> stream;
+        while ((stream = streams.poll()) != null) {
+            try {
+                stream.close();
+            } catch (RuntimeException | Error closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        } else if (failure instanceof Error) {
+            throw (Error) failure;
+        }
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
