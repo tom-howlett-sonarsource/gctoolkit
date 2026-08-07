@@ -47,16 +47,18 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
+        LogFileMetadata metadata = getMetaData();
+        if (metadata.isDirectory() || metadata.isPlainText() || metadata.isZip()) {
+            Stream<LogFileSegment> segments = metadata.logFiles();
+            Stream<String> lines = segments
                     .flatMap(LogFileSegment::stream)
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
-            return Stream.of(endOfData());
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()));
+        }
+        // yes, this is returning an empty stream.
+        return Stream.of(endOfData());
     }
 
     private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
@@ -103,12 +105,39 @@ public class RotatingGCLogFile extends GCLogFile {
                     .filter(Objects::nonNull)
                     .forEach(streams::add);
         } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
+            IOException cause = uioe.getCause();
+            try {
+                zipFile.close();
+            } catch (IOException closeException) {
+                cause.addSuppressed(closeException);
+            }
+            throw cause;
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+        return reader.lines().onClose(() -> close(reader, zipFile));
+    }
+
+    private static void close(BufferedReader reader, ZipFile file) {
+        IOException failure = null;
+        try {
+            reader.close();
+        } catch (IOException exception) {
+            failure = exception;
+        }
+        try {
+            file.close();
+        } catch (IOException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw new UncheckedIOException(failure);
+        }
     }
 
     /**
