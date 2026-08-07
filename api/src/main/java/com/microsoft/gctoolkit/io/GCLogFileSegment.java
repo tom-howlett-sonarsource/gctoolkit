@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.shared.io.LogSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
@@ -169,8 +170,9 @@ public class GCLogFileSegment implements LogFileSegment {
         char CR = '\r';
         boolean foundEOL = false;
         char eol = 0;
+        long sourceSize = LogSource.discover(path).size();
         RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
+        long currentPosition = sourceSize - 1;
         int linesFound = 0;
 
         while (currentPosition > 0 && !foundEOL) {
@@ -190,7 +192,7 @@ public class GCLogFileSegment implements LogFileSegment {
                 currentPosition--;
         }
 
-        currentPosition = randomAccessFile.length() - 1;
+        currentPosition = sourceSize - 1;
 
         while (currentPosition > 0 && linesFound < numberOfLines) {
             randomAccessFile.seek(--currentPosition);
