@@ -7,8 +7,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -165,5 +168,80 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return logFileSegments.stream()
                 .filter( segment -> segment.getEndTime() <= current.getStartTime())
                 .collect(toList());
+    }
+
+    /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For directory and single-file inputs, the sum is
+     * the on-disk byte size of every discovered segment file. For ZIP inputs,
+     * the sum is the uncompressed size of every non-directory entry.
+     * @return combined byte size of all discovered segments, or {@code 0L} when
+     *         no eligible entries are present.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return sumZipEntryByteSizes();
+        }
+        if (isDirectory() || isPlainText()) {
+            return sumFilesystemSegmentByteSizes();
+        }
+        return 0L;
+    }
+
+    private long sumZipEntryByteSizes() {
+        long total = 0L;
+        try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+            Enumeration<? extends ZipEntry> entries = zipfile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.isDirectory()) {
+                    long size = entry.getSize();
+                    if (size > 0L) {
+                        total += size;
+                    }
+                }
+            }
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return total;
+    }
+
+    private long sumFilesystemSegmentByteSizes() {
+        Path root;
+        Predicate<Path> nameFilter;
+        if (isDirectory()) {
+            root = getPath();
+            nameFilter = p -> true;
+        } else {
+            root = getPath().getParent();
+            final String rootPattern = getRootPattern();
+            nameFilter = p -> p.getFileName().toString().startsWith(rootPattern);
+        }
+        if (root == null) {
+            return 0L;
+        }
+        long total = 0L;
+        try (Stream<Path> paths = Files.list(root)) {
+            Iterator<Path> iterator = paths.iterator();
+            while (iterator.hasNext()) {
+                Path candidate = iterator.next();
+                if (Files.isRegularFile(candidate) && nameFilter.test(candidate)) {
+                    total += safeSize(candidate);
+                }
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to size log segments.", ioe);
+        }
+        return total;
+    }
+
+    private static long safeSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
     }
 }
