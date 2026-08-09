@@ -166,4 +166,88 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
                 .filter( segment -> segment.getEndTime() <= current.getStartTime())
                 .collect(toList());
     }
+
+    /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP inputs, this is the sum of the
+     * uncompressed sizes of all non-directory entries. For directories and
+     * individual members of a rotating-file set, this is the sum of file sizes
+     * across the discovered segments. Returns {@code 0L} when no eligible
+     * entries are found.
+     *
+     * @return the total byte size across all discovered segments
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            return sumZipUncompressedSizes();
+        }
+        long total = 0L;
+        for (Path file : discoverSegmentPaths()) {
+            try {
+                total += Files.size(file);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to read segment size.", ioe);
+            }
+        }
+        return total;
+    }
+
+    private long sumZipUncompressedSizes() {
+        long total = 0L;
+        try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+            total = zipfile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to read zip entries.", ioe);
+        }
+        return total;
+    }
+
+    private List<Path> discoverSegmentPaths() {
+        List<Path> paths = new ArrayList<>();
+        if (isDirectory()) {
+            try (Stream<Path> entries = Files.list(getPath())) {
+                entries.filter(Files::isRegularFile).forEach(paths::add);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to list directory segments.", ioe);
+            }
+        } else if (isPlainText()) {
+            Path parent = getPath().getParent();
+            if (parent == null) {
+                if (Files.isRegularFile(getPath())) {
+                    paths.add(getPath());
+                }
+                return paths;
+            }
+            String base = rootPatternFor(getPath().getFileName().toString());
+            try (Stream<Path> entries = Files.list(parent)) {
+                entries.filter(p -> p.getFileName().toString().startsWith(base))
+                        .filter(Files::isRegularFile)
+                        .forEach(paths::add);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to list rotating segments.", ioe);
+            }
+        }
+        return paths;
+    }
+
+    private static String rootPatternFor(String fileName) {
+        String[] bits = fileName.split("\\.");
+        int baseLength;
+        if ("current".equals(bits[bits.length - 1])) {
+            baseLength = bits.length - 2;
+        } else if (bits[bits.length - 1].matches("\\d+$")) {
+            baseLength = bits.length - 1;
+        } else {
+            baseLength = bits.length;
+        }
+        StringBuilder base = new StringBuilder(bits[0]);
+        for (int i = 1; i < baseLength; i++) {
+            base.append(".").append(bits[i]);
+        }
+        return base.toString();
+    }
 }
