@@ -58,6 +58,59 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Combined byte size of every discovered rotating log segment, including the
+     * active log. For ZIP input, sums the uncompressed sizes of all non-directory
+     * entries. Returns {@code 0L} when there are no eligible entries.
+     * @return total byte size across all segments
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            long total = 0L;
+            try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+                var entries = zipfile.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    if (!entry.isDirectory()) {
+                        long size = entry.getSize();
+                        if (size > 0) total += size;
+                    }
+                }
+            } catch (IOException ioe) {
+                LOG.warning(ioe.getMessage());
+                return 0L;
+            }
+            return total;
+        }
+
+        Path root;
+        String prefix = null;
+        if (isDirectory()) {
+            root = getPath();
+        } else if (isPlainText()) {
+            root = getPath().getParent();
+            prefix = getRootPattern();
+        } else {
+            return 0L;
+        }
+        if (root == null) return 0L;
+
+        long total = 0L;
+        try (Stream<Path> paths = Files.list(root)) {
+            List<Path> discovered = paths.collect(toList());
+            for (Path candidate : discovered) {
+                if (!Files.isRegularFile(candidate)) continue;
+                if (prefix != null &&
+                        !candidate.getFileName().toString().startsWith(prefix)) continue;
+                total += Files.size(candidate);
+            }
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+        return total;
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
