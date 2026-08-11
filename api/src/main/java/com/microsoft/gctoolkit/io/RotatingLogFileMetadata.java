@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private Long totalByteSize;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,35 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of the discovered rotating log segments.
+     * ZIP entries are measured by their uncompressed size.
+     *
+     * @return the combined size in bytes, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (totalByteSize != null) {
+            return totalByteSize;
+        }
+
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                totalByteSize = zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP entry sizes.", ioe);
+                totalByteSize = 0L;
+            }
+            return totalByteSize;
+        }
+
+        logFiles();
+        return totalByteSize == null ? 0L : totalByteSize;
     }
 
     /**
@@ -132,7 +162,21 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        totalByteSize = segments.stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(this::sizeOf)
+                .sum();
         orderSegments();
+    }
+
+    private long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
     }
 
     private void orderSegments() {

@@ -1,0 +1,14 @@
+{
+  "command": [
+    "mvn",
+    "--batch-mode",
+    "-pl",
+    "api",
+    "-am",
+    "-Dtest=VisibleRotatingLogFileMetadataSizeTest",
+    "-Dsurefire.failIfNoSpecifiedTests=false",
+    "test"
+  ],
+  "schema_version": "2.0",
+  "task": "rotating-log-total-size-integrity-v2"
+}
