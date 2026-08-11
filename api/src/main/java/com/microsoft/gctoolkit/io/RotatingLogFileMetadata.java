@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,41 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of the discovered log file segments. For ZIP
+     * files, this is the combined uncompressed size of all non-directory entries.
+     *
+     * @return the combined byte size, or {@code 0L} when there are no eligible entries
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP log size.", ioe);
+                return 0L;
+            }
+        }
+
+        if (!(isPlainText() || isDirectory()))
+            return 0L;
+
+        if (segments == null)
+            findSegments();
+
+        return discoveredSegments.stream().mapToLong(segment -> {
+            try {
+                return Files.size(segment.getPath());
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+                return 0L;
+            }
+        }).sum();
     }
 
     /**
@@ -132,6 +168,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = new ArrayList<>(segments);
         orderSegments();
     }
 
