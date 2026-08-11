@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private long totalByteSize;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,32 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined byte size of the discovered rotating log segments.
+     * ZIP entries contribute their uncompressed sizes.
+     *
+     * @return total byte size, or {@code 0L} when no segments are eligible
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        if (segments == null) {
+            findSegments();
+        }
+        return totalByteSize;
     }
 
     /**
@@ -122,17 +149,34 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (Stream<Path> paths = Files.list(getPath())) {
+                    paths.map(GCLogFileSegment::new).forEach(segments::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                String rootPattern = getRootPattern();
+                try (Stream<Path> paths = Files.list(getPath().getParent())) {
+                    paths.filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                            .map(GCLogFileSegment::new).forEach(segments::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        totalByteSize = segments.stream()
+                .map(LogFileSegment::getPath)
+                .mapToLong(this::size)
+                .sum();
         orderSegments();
+    }
+
+    private long size(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
     }
 
     private void orderSegments() {
