@@ -6,6 +6,7 @@
  */
 module com.microsoft.gctoolkit.parser {
     requires com.microsoft.gctoolkit.api;
+    requires com.microsoft.gctoolkit.source.utils;
     requires java.logging;
 
     exports com.microsoft.gctoolkit.parser to
