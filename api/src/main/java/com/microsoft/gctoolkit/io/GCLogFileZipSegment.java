@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -127,10 +128,11 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
-        try {
-            ZipFile file = new ZipFile(path.toFile());
+        try (ZipFile file = new ZipFile(path.toFile())) {
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)))) {
+                return reader.lines().collect(Collectors.toList()).stream();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
