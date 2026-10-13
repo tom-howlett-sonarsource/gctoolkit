@@ -2,11 +2,13 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.gclog.io.GCLogSource;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -112,7 +114,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return new BufferedReader(new InputStreamReader(GCLogSource.open(path))).lines();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -170,7 +172,7 @@ public class GCLogFileSegment implements LogFileSegment {
         boolean foundEOL = false;
         char eol = 0;
         RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
+        long currentPosition = GCLogSource.byteSize(path) - 1;
         int linesFound = 0;
 
         while (currentPosition > 0 && !foundEOL) {
@@ -190,7 +192,7 @@ public class GCLogFileSegment implements LogFileSegment {
                 currentPosition--;
         }
 
-        currentPosition = randomAccessFile.length() - 1;
+        currentPosition = GCLogSource.byteSize(path) - 1;
 
         while (currentPosition > 0 && linesFound < numberOfLines) {
             randomAccessFile.seek(--currentPosition);
