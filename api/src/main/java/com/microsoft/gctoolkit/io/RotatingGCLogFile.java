@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -84,31 +83,27 @@ public class RotatingGCLogFile extends GCLogFile {
         throw new IOException("Unrecognised file type");
     }
 
-    @SuppressWarnings("resource")
     private Stream<String> streamZipFile() throws IOException {
         ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
         try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
+            List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
+            Vector<InputStream> streams = new Vector<>();
+            for (ZipEntry entry : entries) {
+                streams.add(zipFile.getInputStream(entry));
+            }
+            SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+            return reader.lines()
+                    .onClose(StreamResources.close(reader))
+                    .onClose(StreamResources.close(zipFile));
+        } catch (IOException | RuntimeException | Error exception) {
+            try {
+                zipFile.close();
+            } catch (IOException closeException) {
+                exception.addSuppressed(closeException);
+            }
+            throw exception;
         }
-
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
     }
 
     /**
