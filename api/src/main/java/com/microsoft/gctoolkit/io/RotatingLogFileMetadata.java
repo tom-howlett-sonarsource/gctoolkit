@@ -30,6 +30,46 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         super(path);
     }
 
+    /**
+     * Return the combined byte size of all discovered rotating log segments,
+     * including the active log. ZIP entries contribute their uncompressed sizes.
+     * @return The total byte size, or zero when there are no eligible entries.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to read log archive size.", ioe);
+                return 0L;
+            }
+        }
+        if (!isPlainText() && !isDirectory())
+            return 0L;
+
+        Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        String rootPattern = isDirectory() ? null : getRootPattern();
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.filter(Files::isRegularFile)
+                    .filter(file -> rootPattern == null || file.getFileName().toString().startsWith(rootPattern))
+                    .mapToLong(file -> {
+                        try {
+                            return Files.size(file);
+                        } catch (IOException ioe) {
+                            LOG.log(Level.WARNING, "Unable to read log segment size.", ioe);
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
     public Stream<LogFileSegment> logFiles() {
         if ( segments == null) {
             if ( isPlainText() || isDirectory())
