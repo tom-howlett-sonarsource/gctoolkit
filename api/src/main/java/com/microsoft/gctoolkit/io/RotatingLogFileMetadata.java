@@ -25,6 +25,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private long totalByteSize;
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +70,30 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined uncompressed size of all discovered log segments.
+     *
+     * @return the combined size in bytes, or {@code 0L} if no segments are found
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+        if (segments == null) {
+            findSegments();
+        }
+        return totalByteSize;
     }
 
     /**
@@ -132,6 +157,17 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        totalByteSize = segments.stream()
+                .map(LogFileSegment::getPath)
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException ioe) {
+                        LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+                        return 0L;
+                    }
+                })
+                .sum();
         orderSegments();
     }
 
