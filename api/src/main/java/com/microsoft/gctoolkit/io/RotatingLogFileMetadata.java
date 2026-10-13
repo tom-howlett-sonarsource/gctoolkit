@@ -44,6 +44,51 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return segments.stream();
     }
 
+    /**
+     * Return the combined byte size of all discovered log segments.
+     * ZIP entries are measured by their uncompressed size.
+     *
+     * @return the combined byte size, or {@code 0L} when no eligible segments exist
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+                return 0L;
+            }
+        }
+
+        try (Stream<Path> paths = Files.list(isDirectory() ? getPath() : getPath().getParent())) {
+            Stream<Path> discoveredPaths = paths;
+            if (!isDirectory()) {
+                String rootPattern = getRootPattern();
+                discoveredPaths = paths.filter(path -> path.getFileName().toString().startsWith(rootPattern));
+            }
+            return discoveredPaths
+                    .filter(Files::isRegularFile)
+                    .mapToLong(this::sizeOf)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment sizes.", ioe);
+            return 0L;
+        }
+    }
+
+    private long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+            return 0L;
+        }
+    }
+
     private void findZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
             segments = zipfile.stream()
