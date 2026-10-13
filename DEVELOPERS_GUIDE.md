@@ -4,7 +4,7 @@
 
 ## Introduction
 
-GCToolkit is comprised of 3 Java modules, vertx, parser, and api. This document describes how each of these modules fits together to support the conversion of a garbage collection log to a stream of garbage collection events.
+GCToolkit is comprised of the vertx, parser, api, and log-source Java modules. The API and parser share the dependency-free log-source module for filesystem discovery, byte sizing, and plain and compressed log streams. This document describes how these modules fit together to support the conversion of a garbage collection log to a stream of garbage collection events.
 Additionally, GCToolkit contains several components that perform the heavy lifting. These components include, a framework to interact with data sources, diary, data source bus, parsers, and event source bus and finally, a framework to support the aggregation of events.
 The purpose of this document is to provide a brief description of each of these components to aid in the further development of this toolkit.
 
