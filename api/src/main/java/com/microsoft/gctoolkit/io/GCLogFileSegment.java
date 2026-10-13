@@ -13,6 +13,8 @@ import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.stream.Stream;
 
+import com.microsoft.gctoolkit.io.source.LogSources;
+
 /**
  * A {@link RotatingGCLogFile} is made up of {@code GarbageCollectionLogFileSegment}s. Creating
  * a {@code GarbageCollectionLogFileSegment} is not necessary when the
@@ -112,7 +114,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogSources.lines(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
