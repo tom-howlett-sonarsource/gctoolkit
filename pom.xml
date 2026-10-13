@@ -89,6 +89,7 @@
 
     <modules>
         <module>gclogs</module>
+        <module>log-source</module>
         <module>api</module>
         <module>parser</module>
         <module>vertx</module>
@@ -107,6 +108,11 @@
     -->
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.microsoft.gctoolkit</groupId>
+                <artifactId>gctoolkit-log-source</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.microsoft.gctoolkit</groupId>
                 <artifactId>gctoolkit-api</artifactId>
