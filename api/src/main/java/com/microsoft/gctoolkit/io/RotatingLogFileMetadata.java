@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogSource;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -122,7 +124,8 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                LogSource.discover(getPath()).stream()
+                        .map(GCLogFileSegment::new).forEach(segments::add);
             }
             else {
                 Files.list(getPath().getParent())

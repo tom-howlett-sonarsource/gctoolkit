@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import com.microsoft.gctoolkit.time.DateTimeStamp;
+import com.microsoft.gctoolkit.logsource.LogSource;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -170,7 +171,7 @@ public class GCLogFileSegment implements LogFileSegment {
         boolean foundEOL = false;
         char eol = 0;
         RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
+        long currentPosition = LogSource.size(path) - 1;
         int linesFound = 0;
 
         while (currentPosition > 0 && !foundEOL) {
@@ -190,7 +191,7 @@ public class GCLogFileSegment implements LogFileSegment {
                 currentPosition--;
         }
 
-        currentPosition = randomAccessFile.length() - 1;
+        currentPosition = LogSource.size(path) - 1;
 
         while (currentPosition > 0 && linesFound < numberOfLines) {
             randomAccessFile.seek(--currentPosition);
