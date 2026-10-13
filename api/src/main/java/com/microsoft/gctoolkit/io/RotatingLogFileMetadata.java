@@ -72,6 +72,43 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of all discovered log files, including the active log.
+     * ZIP entries contribute their uncompressed sizes; directories do not contribute.
+     * @return The total byte size, or zero when there are no eligible files.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine log size.", ioe);
+                return 0L;
+            }
+        }
+        if (!isDirectory() && !isPlainText())
+            return 0L;
+
+        Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        String rootPattern = isDirectory() ? "" : getRootPattern();
+        try (Stream<Path> files = Files.list(directory)) {
+            List<Path> logFiles = files
+                    .filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                    .collect(toList());
+            long totalByteSize = 0L;
+            for (Path logFile : logFiles)
+                totalByteSize += Files.size(logFile);
+            return totalByteSize;
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log size.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
