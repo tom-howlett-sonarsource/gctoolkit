@@ -6,6 +6,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -69,11 +70,27 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+            return reader.lines().onClose(() -> {
+                try {
+                    reader.close();
+                } catch (IOException exception) {
+                    throw new UncheckedIOException(exception);
+                }
+            });
+        } catch (IOException | RuntimeException | Error exception) {
+            try {
+                zipStream.close();
+            } catch (IOException closeException) {
+                exception.addSuppressed(closeException);
+            }
+            throw exception;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
