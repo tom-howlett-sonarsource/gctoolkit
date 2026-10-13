@@ -30,6 +30,39 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         super(path);
     }
 
+    /**
+     * Return the combined byte size of all discovered log files, including the active log.
+     * ZIP entries contribute their uncompressed sizes; directory entries are excluded.
+     *
+     * @return The total byte size, or zero when no eligible files are found.
+     */
+    public long getTotalByteSize() {
+        long totalByteSize = 0L;
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to read log segment sizes.", ioe);
+            }
+        } else if (isDirectory() || isPlainText()) {
+            Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+            try (Stream<Path> files = Files.list(directory)) {
+                List<Path> discoveredFiles = files
+                        .filter(file -> isDirectory() || file.getFileName().toString().startsWith(getRootPattern()))
+                        .filter(Files::isRegularFile)
+                        .collect(toList());
+                for (Path file : discoveredFiles)
+                    totalByteSize += Files.size(file);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to read log segment sizes.", ioe);
+            }
+        }
+        return totalByteSize;
+    }
+
     public Stream<LogFileSegment> logFiles() {
         if ( segments == null) {
             if ( isPlainText() || isDirectory())
