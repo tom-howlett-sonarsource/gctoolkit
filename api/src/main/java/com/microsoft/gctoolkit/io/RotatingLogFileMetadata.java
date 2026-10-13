@@ -44,6 +44,41 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return segments.stream();
     }
 
+    /**
+     * Return the combined byte size of all discovered log segments, including the active log.
+     * ZIP entries contribute their uncompressed sizes; directory entries are excluded.
+     * @return The total byte size, or zero when no eligible entries are discovered.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine ZIP log size.", ioe);
+                return 0L;
+            }
+        }
+        if (!isDirectory() && !isPlainText())
+            return 0L;
+
+        Path directory = isDirectory() ? getPath() : getPath().toAbsolutePath().getParent();
+        String rootPattern = isDirectory() ? "" : getRootPattern();
+        long totalByteSize = 0L;
+        try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : (Iterable<Path>) files
+                    .filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().startsWith(rootPattern))::iterator) {
+                totalByteSize += Files.size(file);
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to determine log segment size.", ioe);
+        }
+        return totalByteSize;
+    }
+
     private void findZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
             segments = zipfile.stream()
