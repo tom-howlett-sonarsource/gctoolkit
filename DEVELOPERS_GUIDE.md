@@ -4,7 +4,9 @@
 
 ## Introduction
 
-GCToolkit is comprised of 3 Java modules, vertx, parser, and api. This document describes how each of these modules fits together to support the conversion of a garbage collection log to a stream of garbage collection events.
+GCToolkit's core Java modules are vertx, parser, api, and log-source. This document describes how these modules fit together to support the conversion of a garbage collection log to a stream of garbage collection events.
+
+The `gctoolkit-log-source` artifact (`com.microsoft.gctoolkit.logsource` JPMS module) provides shared source discovery, stored byte sizing, format detection, and plain, ZIP, and GZIP line streams for both api and parser. It has no dependency on either module. Callers must close returned streams; GC-specific normalization, segment ordering, and end-of-data sentinels remain in the consuming modules. Plain files use UTF-8 via `Files.lines`; compressed files retain the platform-default decoding used by the existing callers. ZIP streams read the first non-directory entry unless an entry is explicitly selected.
 Additionally, GCToolkit contains several components that perform the heavy lifting. These components include, a framework to interact with data sources, diary, data source bus, parsers, and event source bus and finally, a framework to support the aggregation of events.
 The purpose of this document is to provide a brief description of each of these components to aid in the further development of this toolkit.
 
