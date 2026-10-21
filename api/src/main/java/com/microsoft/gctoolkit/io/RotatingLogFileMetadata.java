@@ -58,6 +58,58 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP input the uncompressed sizes of all
+     * non-directory entries are summed.
+     * @return The total byte size of all segments, or {@code 0L} if there are none.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            long total = 0L;
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                total = zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to size ZIP segments.", ioe);
+            }
+            return total;
+        }
+
+        // Ensure discovery has run (populates segments and preserves ordering behavior),
+        // then size every discovered file on disk rather than the ordered subset so that
+        // segments without resolvable timestamps are still counted.
+        logFiles();
+        long total = 0L;
+        for (Path file : discoverFiles()) {
+            try {
+                if (!Files.isDirectory(file))
+                    total += Files.size(file);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to size log segment.", ioe);
+            }
+        }
+        return total;
+    }
+
+    private List<Path> discoverFiles() {
+        List<Path> files = new ArrayList<>();
+        try {
+            if (isDirectory()) {
+                Files.list(getPath()).forEach(files::add);
+            } else {
+                Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                        .forEach(files::add);
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+        }
+        return files;
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
