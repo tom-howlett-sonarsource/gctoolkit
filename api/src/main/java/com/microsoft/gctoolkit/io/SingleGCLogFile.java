@@ -6,6 +6,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -69,16 +70,40 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+            return linesClosing(new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))));
+        } catch (IOException | RuntimeException e) {
+            zipStream.close();
+            throw e;
+        }
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        try {
+            return linesClosing(new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))));
+        } catch (RuntimeException e) {
+            gzipStream.close();
+            throw e;
+        }
+    }
+
+    /**
+     * Return the reader's lines as a stream that, when closed, closes the reader and every
+     * underlying stream it wraps (including the archive input stream and its file descriptor).
+     */
+    private static Stream<String> linesClosing(BufferedReader reader) {
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
 }
