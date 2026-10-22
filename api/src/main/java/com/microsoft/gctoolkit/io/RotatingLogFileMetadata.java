@@ -72,6 +72,27 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined size in bytes of all rotating log segments, including the active log.
+     * For ZIP files this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return the total size in bytes, or 0 if there are no eligible segments.
+     * @throws IOException if a segment size cannot be read.
+     */
+    public long getTotalByteSize() throws IOException {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(zipEntry -> Math.max(0L, zipEntry.getSize()))
+                        .sum();
+            }
+        }
+        long total = 0L;
+        for (Path segment : discoverSegmentPaths().filter(Files::isRegularFile).collect(toList()))
+            total += Files.size(segment);
+        return total;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
@@ -119,20 +140,24 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
-        try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+        segments = new ArrayList<>(discoverSegmentPaths().map(GCLogFileSegment::new).collect(toList()));
+        orderSegments();
+    }
+
+    /**
+     * Find all files belonging to this rotating log, without ordering or filtering on time stamps.
+     * @return the paths of all discovered segments.
+     */
+    private Stream<Path> discoverSegmentPaths() {
+        try (Stream<Path> files = Files.list(isDirectory() ? getPath() : getPath().getParent())) {
+            List<Path> paths = isDirectory()
+                    ? files.collect(toList())
+                    : files.filter(file -> file.getFileName().toString().startsWith(getRootPattern())).collect(toList());
+            return paths.stream();
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
+            return Stream.empty();
         }
-        orderSegments();
     }
 
     private void orderSegments() {
