@@ -58,6 +58,74 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP input the uncompressed sizes of all
+     * non-directory entries are summed. Returns {@code 0L} when there are no
+     * eligible entries.
+     * @return The total byte size of all discovered segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipUncompressedByteSize();
+        return discoveredFiles()
+                .mapToLong(this::fileByteSize)
+                .sum();
+    }
+
+    private Stream<Path> discoveredFiles() {
+        try {
+            if (isDirectory()) {
+                return Files.list(getPath()).filter(Files::isRegularFile);
+            }
+            return Files.list(getPath().getParent())
+                    .filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().startsWith(rootPatternFromPath()));
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return Stream.empty();
+        }
+    }
+
+    private String rootPatternFromPath() {
+        String[] bits = getPath().getFileName().toString().split("\\.");
+        int baseLength;
+        if ("current".equals(bits[bits.length - 1]))
+            baseLength = bits.length - 2;
+        else if (bits[bits.length - 1].matches("\\d+$"))
+            baseLength = bits.length - 1;
+        else
+            baseLength = bits.length;
+
+        StringBuilder base = new StringBuilder(bits[0]);
+        for (int i = 1; i < baseLength; i++)
+            base.append(".").append(bits[i]);
+        return base.toString();
+    }
+
+    private long zipUncompressedByteSize() {
+        long total = 0L;
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            total = zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return total;
+    }
+
+    private long fileByteSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
