@@ -72,6 +72,56 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP sources this is the sum of the
+     * uncompressed sizes of all non-directory entries. Returns {@code 0L} when
+     * there are no eligible entries.
+     * @return The total byte size of all discovered segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipTotalByteSize();
+        return fileTotalByteSize();
+    }
+
+    private long fileTotalByteSize() {
+        long total = 0L;
+        try (Stream<Path> files = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))) {
+            total = files
+                    .filter(Files::isRegularFile)
+                    .mapToLong(file -> {
+                        try {
+                            return Files.size(file);
+                        } catch (IOException ioe) {
+                            LOG.log(Level.WARNING, "Unable to determine size of log segment.", ioe);
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+        }
+        return total;
+    }
+
+    private long zipTotalByteSize() {
+        long total = 0L;
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            total = zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return total;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
