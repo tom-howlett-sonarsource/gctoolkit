@@ -6,6 +6,7 @@ import com.microsoft.gctoolkit.aggregator.EventSource;
 import com.microsoft.gctoolkit.event.CPUSummary;
 import com.microsoft.gctoolkit.event.GCCause;
 import com.microsoft.gctoolkit.event.GarbageCollectionTypes;
+import com.microsoft.gctoolkit.event.MemoryPoolSummary;
 import com.microsoft.gctoolkit.event.generational.AbortablePreClean;
 import com.microsoft.gctoolkit.event.generational.CMSConcurrentEvent;
 import com.microsoft.gctoolkit.event.generational.CMSRemark;
@@ -169,12 +170,17 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
     private void youngHeader(GCLogTrace trace, String line) {
         if (pauseEvent != null)
             LOGGER.warning("Young pause event not recorded: " + pauseEvent.getGcID());
+        GCLogTrace gcIdTrace = super.GCID_COUNTER.parse(line);
+        if (gcIdTrace == null) {
+            LOGGER.warning(() -> "Unable to find GC ID for young collection: " + line);
+            return;
+        }
         if (diary.isCMS())
-            pauseEvent = new GenerationalForwardReference(ParNew, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+            pauseEvent = new GenerationalForwardReference(ParNew, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         else if (diary.isPSYoung())
-            pauseEvent = new GenerationalForwardReference(PSYoungGen, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+            pauseEvent = new GenerationalForwardReference(PSYoungGen, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         else if (diary.isSerialFull())
-            pauseEvent = new GenerationalForwardReference(DefNew, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+            pauseEvent = new GenerationalForwardReference(DefNew, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         else {
             LOGGER.warning("Unrecognized collection phase -> " + line);
             return;
@@ -261,7 +267,12 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
     private void initialMark(GCLogTrace trace, String line) {
         if (concurrentCyclePauseEvent != null)
             LOGGER.warning("Pause event not completely recorded: " + pauseEvent.getGcID());
-        concurrentCyclePauseEvent = new GenerationalForwardReference(InitialMark, new Decorators(line), GCID_COUNTER.parse(line).getIntegerGroup(1));
+        GCLogTrace gcIdTrace = GCID_COUNTER.parse(line);
+        if (gcIdTrace == null) {
+            LOGGER.warning("Unable to find GC ID for initial mark");
+            return;
+        }
+        concurrentCyclePauseEvent = new GenerationalForwardReference(InitialMark, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         concurrentCyclePauseEvent.setStartTime(getClock());
     }
 
@@ -278,7 +289,12 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
             LOGGER.warning("Unknown concurrent phase: " + line);
             return;
         }
-        concurrentEvent = new GenerationalForwardReference(gcType, new Decorators(line), GCID_COUNTER.parse(line).getIntegerGroup(1));
+        GCLogTrace gcIdTrace = GCID_COUNTER.parse(line);
+        if (gcIdTrace == null) {
+            LOGGER.warning(() -> "Missing GC ID in concurrent phase: " + line);
+            return;
+        }
+        concurrentEvent = new GenerationalForwardReference(gcType, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         concurrentEvent.setStartTime(getClock());
         inConcurrentPhase = true;
     }
@@ -288,6 +304,10 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
     }
 
     private void workerThreads(GCLogTrace trace, String line) {
+        if (trace == null) {
+            LOGGER.warning(() -> "Unable to parse worker threads: " + line);
+            return;
+        }
         notYetImplemented(trace, line);
     }
 
@@ -299,7 +319,12 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
     private void remark(GCLogTrace trace, String line) {
         if (concurrentCyclePauseEvent != null)
             LOGGER.warning("Pause event not recorded and is about to be lost: " + pauseEvent.getGcID());
-        concurrentCyclePauseEvent = new GenerationalForwardReference(Remark, new Decorators(line), GCID_COUNTER.parse(line).getIntegerGroup(1));
+        GCLogTrace gcIdTrace = GCID_COUNTER.parse(line);
+        if (gcIdTrace == null) {
+            LOGGER.log(Level.WARNING, "Unable to find GC ID for remark: {0}", line);
+            return;
+        }
+        concurrentCyclePauseEvent = new GenerationalForwardReference(Remark, new Decorators(line), gcIdTrace.getIntegerGroup(1));
         concurrentCyclePauseEvent.setStartTime(getClock());
     }
 
@@ -327,10 +352,15 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
 
     private void fullGC(GCLogTrace trace, String line) {
         if (pauseEvent == null) {
+            GCLogTrace gcIdTrace = super.GCID_COUNTER.parse(line);
+            if (gcIdTrace == null) {
+                LOGGER.warning(() -> "Unable to find GC ID for Full GC: " + line);
+                return;
+            }
             if (diary.isPSOldGen())
-                pauseEvent = new GenerationalForwardReference(PSFull, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+                pauseEvent = new GenerationalForwardReference(PSFull, new Decorators(line), gcIdTrace.getIntegerGroup(1));
             else
-                pauseEvent = new GenerationalForwardReference(FullGC, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+                pauseEvent = new GenerationalForwardReference(FullGC, new Decorators(line), gcIdTrace.getIntegerGroup(1));
             pauseEvent.setStartTime(getClock());
         } else if (pauseEvent.getGarbageCollectionType() == ParNew) {
             pauseEvent.convertToConcurrentModeFailure();
@@ -338,7 +368,12 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
             pauseEvent.convertToSerialFull();
         } else if (pauseEvent.getGarbageCollectionType() != ConcurrentModeFailure) {
             LOGGER.warning("Maybe Full Pause event not recorded: " + pauseEvent.getGcID()); //todo: difficult to know if this is a full or a CMF
-            pauseEvent = new GenerationalForwardReference(FullGC, new Decorators(line), super.GCID_COUNTER.parse(line).getIntegerGroup(1));
+            GCLogTrace gcIdTrace = super.GCID_COUNTER.parse(line);
+            if (gcIdTrace == null) {
+                LOGGER.warning(() -> "Unable to find GC ID for Full GC: " + line);
+                return;
+            }
+            pauseEvent = new GenerationalForwardReference(FullGC, new Decorators(line), gcIdTrace.getIntegerGroup(1));
             pauseEvent.setStartTime(getClock());
         }
         pauseEvent.setGCCause(trace.gcCause(1, 0));
@@ -429,30 +464,23 @@ public class UnifiedGenerationalParser extends UnifiedGCLogParser implements Uni
     }
 
     private void fillOutMemoryPoolData(GenerationalGCPauseEvent event, GenerationalForwardReference values) {
-        int map = 0;
-        map |= (values.getHeap() != null) ? 1 : 0;
-        map |= (values.getYoung() != null) ? 2 : 0;
-        map |= (values.getTenured() != null) ? 4 : 0;
-        switch (map) {
-            default:
-            case 0:  // none, error
-            case 2: // young
-            case 4: // tenured
-                break;
-            case 1: // heap
-                event.add(values.getHeap());
-                break;
-            case 3: // young, heap
-                event.add(values.getYoung(), values.getHeap());
-                break;
-            case 5: // tenured, heap
-                event.add(values.getHeap().minus(values.getTenured()), values.getTenured(), values.getHeap());
-                break;
-            case 6: // tenured, young
-                event.add(values.getYoung(), values.getTenured(), values.getYoung().add(values.getTenured()));
-                break;
-            case 7: // tenured, young, heap
-                event.add(values.getYoung(), values.getTenured(), values.getHeap());
+        MemoryPoolSummary heap = values.getHeap();
+        MemoryPoolSummary young = values.getYoung();
+        MemoryPoolSummary tenured = values.getTenured();
+        if (heap != null) {
+            if (young != null) {
+                if (tenured != null) {
+                    event.add(young, tenured, heap);
+                } else {
+                    event.add(young, heap);
+                }
+            } else if (tenured != null) {
+                event.add(heap.minus(tenured), tenured, heap);
+            } else {
+                event.add(heap);
+            }
+        } else if (young != null && tenured != null) {
+            event.add(young, tenured, young.add(tenured));
         }
     }
 

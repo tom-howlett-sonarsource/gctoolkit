@@ -626,9 +626,11 @@ public class GenerationalHeapParser extends PreUnifiedGCLogParser implements Sim
         gcCauseForwardReference = GCCause.PROMOTION_FAILED;
         ArrayList<Integer> blocks = new ArrayList<>();
         GCLogTrace block = PARNEW_PROMOTION_FAILURE_SIZE_BLOCK.parse(line);
-        do {
-            blocks.add(block.getIntegerGroup(1));
-        } while (block.hasNext());
+        if (block != null) {
+            do {
+                blocks.add(block.getIntegerGroup(1));
+            } while (block.hasNext());
+        }
         promotionFailureSizesForwardReference = new int[blocks.size()];
         for (int index = 0; index < blocks.size(); index++)
             promotionFailureSizesForwardReference[index] = blocks.get(index);
@@ -2067,6 +2069,10 @@ public class GenerationalHeapParser extends PreUnifiedGCLogParser implements Sim
 
     private void endConcurrentPrecleanWithReferenceProcessing(GCLogTrace trace, String line) {
         GCLogTrace concurrentBlock = CONCURRENT_PHASE_END_BLOCK.parse(line);
+        if (concurrentBlock == null) {
+            LOGGER.warning(() -> "Unable to extract data from " + trace);
+            return;
+        }
         try {
             publish(new ConcurrentPreClean(startOfConcurrentPhase, concurrentBlock.getDoubleGroup(11), concurrentBlock.getDoubleGroup(7), concurrentBlock.getDoubleGroup(8)));
         } catch (Throwable t) {

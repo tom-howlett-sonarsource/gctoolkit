@@ -67,8 +67,11 @@ public class ShenandoahParser extends UnifiedGCLogParser implements ShenandoahPa
                     .findFirst();
             if ( optional.isPresent()) {
                 AbstractMap.SimpleEntry<GCParseRule, GCLogTrace> ruleAndTrace = optional.get();
-                parseRules.get(ruleAndTrace.getKey()).accept(ruleAndTrace.getValue(), line);
-                return;
+                BiConsumer<GCLogTrace, String> consumer = parseRules.get(ruleAndTrace.getKey());
+                if (consumer != null) {
+                    consumer.accept(ruleAndTrace.getValue(), line);
+                    return;
+                }
             }
         } catch (Throwable t) {
             LOGGER.throwing(this.getName(), "process", t);
