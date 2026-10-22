@@ -6,6 +6,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -73,12 +74,33 @@ public class SingleGCLogFile extends GCLogFile {
         do {
             entry = zipStream.getNextEntry();
         } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+        return closingStream(reader);
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return closingStream(reader);
+    }
+
+    /**
+     * Wrap {@link BufferedReader#lines()} with a close handler that releases the reader.
+     * {@code BufferedReader.lines()} does not close its reader when the returned stream is
+     * closed, which would otherwise leak the underlying archive input stream. Closing the
+     * reader cascades through the {@link InputStreamReader} to the (gzip/zip) input stream
+     * and the file it was opened from. The handler also fires when a caller closes a stream
+     * that was only partially consumed, because the surrounding {@code Stream.concat}
+     * propagates close() to this component stream.
+     */
+    private static Stream<String> closingStream(BufferedReader reader) {
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
 }
