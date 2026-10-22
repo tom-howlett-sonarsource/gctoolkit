@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collector;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -26,6 +28,8 @@ import java.util.zip.ZipFile;
  * provide a list of discrete {@code GarbageCollectionLogFileSegement}s for a {@code RotatingGCLogFile}.
  */
 public class GCLogFileZipSegment implements LogFileSegment {
+
+    private static final Logger LOGGER = Logger.getLogger(GCLogFileZipSegment.class.getName());
 
     private final Path path;
     private final String segmentName;
@@ -56,19 +60,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
+            try (Stream<String> lines = stream()) {
+                startTime = lines
                     .filter(s -> ! s.contains(" file created "))
                     .map(DateTimeStamp::fromGCLogLine)
                     .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
                     .findFirst()
                     .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -124,17 +132,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     /**
      * Stream the file, one line at a time.
+     * Closing the returned stream releases the underlying zip archive.
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
+        ZipFile file = null;
         try {
-            ZipFile file = new ZipFile(path.toFile());
+            file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            if (entry == null)
+                throw new IOException("Entry " + segmentName + " not found in " + path);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            return SingleGCLogFile.linesClosingOnClose(reader, file);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.log(Level.WARNING, "Unable to read " + segmentName + " from " + path, e);
+            SingleGCLogFile.closeQuietly(file);
         }
-        return new ArrayList<String>().stream();
+        return Stream.empty();
     }
 
     /**
