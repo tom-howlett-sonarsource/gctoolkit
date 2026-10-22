@@ -122,12 +122,15 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         segments = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                try (Stream<Path> files = Files.list(getPath())) {
+                    files.map(GCLogFileSegment::new).forEach(segments::add);
+                }
             }
             else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                try (Stream<Path> files = Files.list(getPath().getParent())) {
+                    files.filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                            .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                }
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);

@@ -11,6 +11,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
@@ -56,11 +57,23 @@ public class SafepointLogFile implements DataSource<String> {
 
     Stream<String> streamZipFile() throws IOException {
         ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry.isDirectory());
+        } catch (IOException | RuntimeException e) {
+            zipStream.close();
+            throw e;
+        }
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+        return reader.lines().onClose(() -> {
+            try {
+                reader.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
     Stream<String> streamGZipFile() throws IOException {
