@@ -2,23 +2,15 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.SequenceInputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Vector;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /**
  * A collection of rotating GC log files. The collection will contain only those files that can be
@@ -47,68 +39,45 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // flatMap does not guarantee segment streams are closed when the caller stops early,
+            // so track every opened segment and close them all with the composed stream.
+            List<Stream<String>> openedSegments = new ArrayList<>();
+            Stream<LogFileSegment> segments = getMetaData().logFiles();
+            Stream<String> lines = segments
+                    .map(segment -> {
+                        Stream<String> segmentLines = segment.stream();
+                        if (segmentLines != null)
+                            openedSegments.add(segmentLines);
+                        return segmentLines;
+                    })
+                    .filter(Objects::nonNull)
+                    .flatMap(Function.identity())
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
+                    .filter(s -> s.length() > 0)
+                    .onClose(() -> closeAll(openedSegments));
+            return Stream.concat(lines, Stream.of(endOfData()));
+        }
         else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
     }
 
-    private Stream<String> stream(LogFileMetadata metadata, LinkedList<GCLogFileSegment> segments) throws IOException {
-        //todo: find rolling files....
-        if (metadata.isPlainText() || metadata.isDirectory()) {
-            switch (segments.size()) {
-                case 0:
-                    String[] empty = new String[0];
-                    return Arrays.stream(empty);
-                case 1:
-                    return segments.getFirst().stream();
-                default:
-                    // This code removes elements from the list of segments, so work on a copy.
-                    LinkedList<GCLogFileSegment> copySegments = new LinkedList<>(segments);
-                    Stream<String> allSegments = Stream.concat(copySegments.removeFirst().stream(), copySegments.removeFirst().stream());
-                    while (!copySegments.isEmpty())
-                        allSegments = Stream.concat(allSegments, copySegments.removeFirst().stream());
-                    return allSegments;
+    private static void closeAll(List<Stream<String>> streams) {
+        RuntimeException failure = null;
+        for (Stream<String> stream : streams) {
+            try {
+                stream.close();
+            } catch (RuntimeException e) {
+                if (failure == null)
+                    failure = e;
+                else
+                    failure.addSuppressed(e);
             }
-        } else if (metadata.isZip()) {
-            return streamZipFile();
-        } else if (metadata.isGZip()) {
-            throw new IOException("Unable to stream GZip files. Please unzip and retry");
         }
-        throw new IOException("Unrecognised file type");
-    }
-
-    @SuppressWarnings("resource")
-    private Stream<String> streamZipFile() throws IOException {
-        ZipFile zipFile = new ZipFile(path.toFile());
-        List<ZipEntry> entries = zipFile.stream().filter(entry -> !entry.isDirectory()).collect(Collectors.toList());
-        Vector<InputStream> streams = new Vector<>();
-
-        try {
-            entries
-                    .stream()
-                    .map(entry -> {
-                        try {
-                            return zipFile.getInputStream(entry);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .forEach(streams::add);
-        } catch (UncheckedIOException uioe) {
-            throw uioe.getCause();
-        }
-
-        SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+        streams.clear();
+        if (failure != null)
+            throw failure;
     }
 
     /**
