@@ -141,8 +141,11 @@ public class ZGCParser extends UnifiedGCLogParser implements ZGCPatterns {
                     .findFirst();
             if (optional.isPresent()) {
                 AbstractMap.SimpleEntry<GCParseRule, GCLogTrace> ruleAndTrace = optional.get();
-                parseRules.get(ruleAndTrace.getKey()).accept(ruleAndTrace.getValue(), line);
-                return;
+                BiConsumer<GCLogTrace, String> action = parseRules.get(ruleAndTrace.getKey());
+                if (action != null) {
+                    action.accept(ruleAndTrace.getValue(), line);
+                    return;
+                }
             }
         } catch (Throwable t) {
             LOGGER.throwing(this.getName(), "process", t);
@@ -160,6 +163,9 @@ public class ZGCParser extends UnifiedGCLogParser implements ZGCPatterns {
     }
 
     private ZGCForwardReference getForwardRefForPhase(ZGCPhase zgcPhase) {
+        if (zgcPhase == null) {
+            throw new IllegalArgumentException("Missing ZGC phase");
+        }
         switch (zgcPhase) {
             // No phase information, legacy ZGC
             case FULL:

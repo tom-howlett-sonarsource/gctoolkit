@@ -39,7 +39,7 @@ public abstract class GenerationalGCPauseEvent extends GenerationalGCEvent {
     public void add(MemoryPoolSummary young, MemoryPoolSummary heap) {
         this.add(
                 young,
-                heap.minus(young),
+                heap != null ? heap.minus(young) : null,
                 heap);
     }
 
