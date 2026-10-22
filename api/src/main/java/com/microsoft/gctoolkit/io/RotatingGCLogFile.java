@@ -47,15 +47,22 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // Compose the ordered segment streams with Stream.concat rather than flatMap. Unlike flatMap,
+            // concat deterministically propagates close() to every constituent segment stream - including
+            // one that is only partially consumed when the caller closes the composed stream - so each
+            // segment (and any archive descriptor it holds) is released. Segment ordering is preserved.
+            Stream<String> composed = getMetaData().logFiles()
+                    .map(LogFileSegment::stream)
+                    .reduce(Stream::concat)
+                    .orElseGet(Stream::empty);
             return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+                    composed
                     .filter(Objects::nonNull)
                     .map(String::trim)
                     .filter(s -> s.length() > 0),
                     Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
     }
 
