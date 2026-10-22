@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
+import com.microsoft.gctoolkit.logsource.LogSources;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -112,7 +112,7 @@ public class GCLogFileSegment implements LogFileSegment {
      */
     public Stream<String> stream() {
         try {
-            return Files.lines(path);
+            return LogSources.lines(path);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -164,6 +164,9 @@ public class GCLogFileSegment implements LogFileSegment {
      // Tail is not a class, it's a method so the solution in stackoverflow isn't correct but the core
      // could be used here as it's cleaner
     private ArrayList<String> tail(int numberOfLines) throws IOException {
+
+        if (LogSources.sizeOf(path) == 0)
+            return new ArrayList<>();
 
         char LF = '\n';
         char CR = '\r';
