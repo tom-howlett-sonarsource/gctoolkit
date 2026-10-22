@@ -3,9 +3,13 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
@@ -72,6 +76,43 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined size, in bytes, of all rotating log segments, including the active log.
+     * For ZIP input, this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return the total size in bytes, or 0 if there are no eligible segments.
+     * @throws UncheckedIOException if a segment size cannot be determined.
+     */
+    public long getTotalByteSize() {
+        try {
+            if (isZip())
+                return zipUncompressedSize();
+            long total = 0L;
+            for (Path segment : discoverSegmentPaths())
+                total += Files.size(segment);
+            return total;
+        } catch (IOException ioe) {
+            throw new UncheckedIOException("Unable to determine size of log segments.", ioe);
+        }
+    }
+
+    private long zipUncompressedSize() throws IOException {
+        long total = 0L;
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            for (ZipEntry entry : Collections.list(zipfile.entries())) {
+                if (entry.isDirectory())
+                    continue;
+                long size = entry.getSize();
+                if (size < 0) {
+                    try (InputStream in = zipfile.getInputStream(entry)) {
+                        size = in.transferTo(OutputStream.nullOutputStream());
+                    }
+                }
+                total += size;
+            }
+        }
+        return total;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
@@ -121,18 +162,24 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private void findSegments() {
         segments = new ArrayList<>();
         try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+            discoverSegmentPaths().stream().map(GCLogFileSegment::new).forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
         orderSegments();
+    }
+
+    private List<Path> discoverSegmentPaths() throws IOException {
+        if (isDirectory()) {
+            try (Stream<Path> files = Files.list(getPath())) {
+                return files.collect(toList());
+            }
+        }
+        String rootPattern = getRootPattern();
+        try (Stream<Path> files = Files.list(getPath().getParent())) {
+            return files.filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                    .collect(toList());
+        }
     }
 
     private void orderSegments() {
