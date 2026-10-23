@@ -72,6 +72,30 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined size, in bytes, of all rotating log segments, including the active log.
+     * For ZIP files, this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return The total size in bytes, or 0 if there are no eligible entries.
+     * @throws IOException if a segment size cannot be determined.
+     */
+    public long getTotalByteSize() throws IOException {
+        if (isZip())
+            return getZipUncompressedSize();
+        long total = 0L;
+        for (LogFileSegment segment : discoverSegments())
+            total += Files.size(segment.getPath());
+        return total;
+    }
+
+    private long getZipUncompressedSize() throws IOException {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .sum();
+        }
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
@@ -119,20 +143,25 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverSegments() {
+        List<LogFileSegment> found = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(found::add);
             }
             else {
                 Files.list(getPath().getParent())
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                        .map(p -> new GCLogFileSegment(p)).forEach(found::add);
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return found;
     }
 
     private void orderSegments() {
