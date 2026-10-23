@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,19 +57,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -130,7 +135,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
         try {
             ZipFile file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            // BufferedReader.lines() does not close its source when the stream is closed, and the ZipFile is a
+            // separate resource holding the archive's file descriptor. Close both so no descriptor leaks when the
+            // returned stream is closed, even after only partial consumption.
+            return reader.lines().onClose(() -> {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                } finally {
+                    try {
+                        file.close();
+                    } catch (IOException ignored) {
+                        // Nothing further can be done if the archive cannot be closed.
+                    }
+                }
+            });
         } catch (IOException e) {
             e.printStackTrace();
         }

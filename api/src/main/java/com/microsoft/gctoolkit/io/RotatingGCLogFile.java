@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -47,14 +48,27 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // flatMap opens a segment's stream lazily as it is consumed and closes each one once exhausted, but it
+            // does not propagate a close of the composed stream to the segment currently in flight. Track every
+            // segment stream that gets opened and close them all from the composed stream's onClose handler so that
+            // a caller closing a partially consumed stream still releases any open archive. Stream.close() is
+            // idempotent, so closing segments that flatMap already closed is harmless.
+            List<Stream<String>> openSegments = new ArrayList<>();
+            Stream<String> lines = Stream.concat(
                     getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream != null)
+                            openSegments.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
                     .filter(s -> s.length() > 0),
                     Stream.of(endOfData()));
+            return lines.onClose(() -> openSegments.forEach(Stream::close));
+        }
         else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
     }
