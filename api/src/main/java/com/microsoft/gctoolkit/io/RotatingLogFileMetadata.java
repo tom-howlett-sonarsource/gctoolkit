@@ -120,19 +120,45 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
 
     private void findSegments() {
         segments = new ArrayList<>();
-        try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
-            }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+        try (Stream<Path> paths = listSegmentPaths()) {
+            paths.map(GCLogFileSegment::new).forEach(segments::add);
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
         orderSegments();
+    }
+
+    private Stream<Path> listSegmentPaths() throws IOException {
+        if (isDirectory())
+            return Files.list(getPath());
+        String rootPattern = getRootPattern();
+        return Files.list(getPath().getParent())
+                .filter(file -> file.getFileName().toString().startsWith(rootPattern));
+    }
+
+    /**
+     * Return the combined size in bytes of all discovered rotating log segments, including the
+     * active log. For ZIP files this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return the total size in bytes, or 0 if there are no eligible entries.
+     * @throws IOException if the files cannot be read.
+     */
+    public long getTotalByteSize() throws IOException {
+        if (isZip()) {
+            try (ZipFile zipFile = new ZipFile(getPath().toFile())) {
+                return zipFile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(zipEntry -> Math.max(0L, zipEntry.getSize()))
+                        .sum();
+            }
+        }
+        if (!isPlainText() && !isDirectory())
+            return 0L;
+        long total = 0L;
+        try (Stream<Path> paths = listSegmentPaths()) {
+            for (Path path : (Iterable<Path>) paths.filter(Files::isRegularFile)::iterator)
+                total += Files.size(path);
+        }
+        return total;
     }
 
     private void orderSegments() {
