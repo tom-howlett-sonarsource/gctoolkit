@@ -72,6 +72,62 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For plain-text and directory inputs this is the
+     * sum of the file sizes on disk. For ZIP inputs this is the sum of the
+     * uncompressed sizes of all non-directory entries.
+     * @return The total byte size of all discovered segments, or {@code 0L} if
+     * there are no eligible entries.
+     */
+    public long getTotalByteSize() {
+        // Computed from the full set of discovered entries using the existing
+        // discovery behavior. Ordering (which may drop ineligible segments from
+        // the logFiles() stream) is intentionally not applied here.
+        if (isZip())
+            return totalZipByteSize();
+        long total = 0L;
+        for (LogFileSegment segment : discoveredFiles()) {
+            try {
+                if (!Files.isDirectory(segment.getPath()))
+                    total += Files.size(segment.getPath());
+            } catch (IOException ioe) {
+                LOG.warning(ioe.getMessage());
+            }
+        }
+        return total;
+    }
+
+    private long totalZipByteSize() {
+        long total = 0L;
+        try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+            total = zipfile.stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+        }
+        return total;
+    }
+
+    private List<LogFileSegment> discoveredFiles() {
+        List<LogFileSegment> discovered = new ArrayList<>();
+        try {
+            if (isDirectory()) {
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(discovered::add);
+            } else {
+                Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
+                        .map(GCLogFileSegment::new).forEach(discovered::add);
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+        }
+        return discovered;
+    }
+
+    /**
      * Root for the pattern for the file currently being written to... has
      * a .<number> suffix for unified
      * a .current suffix for pre-unified.
