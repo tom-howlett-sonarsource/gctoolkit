@@ -44,6 +44,56 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return segments.stream();
     }
 
+    /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP input the uncompressed sizes of all
+     * non-directory entries are summed.
+     *
+     * @return The total byte size of all eligible segments, or {@code 0L} when there are none.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            long total = 0L;
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                var entries = zipfile.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    if (entry.isDirectory())
+                        continue;
+                    long size = entry.getSize();
+                    if (size > 0)
+                        total += size;
+                }
+            } catch (IOException ioe) {
+                LOG.warning(ioe.getMessage());
+            }
+            return total;
+        }
+
+        // Ensure discovery has run, then size every discovered file directly from the
+        // filesystem. The ordered segment list may prune members, so re-enumerate the
+        // same set that discovery gathered rather than relying on it.
+        logFiles();
+        long total = 0L;
+        try (Stream<Path> files = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))) {
+            for (Path file : files.collect(toList())) {
+                if (Files.isDirectory(file))
+                    continue;
+                try {
+                    total += Files.size(file);
+                } catch (IOException ioe) {
+                    LOG.log(Level.WARNING, "Unable to determine size of log segment.", ioe);
+                }
+            }
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+        }
+        return total;
+    }
+
     private void findZIPSegments() {
         try (var zipfile = new ZipFile(getPath().toFile())) {
             segments = zipfile.stream()
