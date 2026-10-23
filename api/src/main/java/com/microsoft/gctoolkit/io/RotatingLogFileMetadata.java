@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     private static final Logger LOG = Logger.getLogger(RotatingLogFileMetadata.class.getName());
 
     private List<LogFileSegment> segments;
+    private List<LogFileSegment> discoveredSegments = List.of();
 
     public RotatingLogFileMetadata(Path path) throws IOException {
         super(path);
@@ -69,6 +71,33 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             else
                 findSegments();
             return this.segments.size();
+    }
+
+    /**
+     * Return the combined size in bytes of all rotating log segments, including the active log.
+     * For ZIP files, this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return The total size in bytes, or 0 if there are no eligible entries.
+     * @throws UncheckedIOException if a size cannot be read.
+     */
+    public long getTotalByteSize() {
+        try {
+            if (isZip()) {
+                try (var zipfile = new ZipFile(getPath().toFile())) {
+                    return zipfile.stream()
+                            .filter(zipEntry -> !zipEntry.isDirectory())
+                            .mapToLong(zipEntry -> Math.max(zipEntry.getSize(), 0L))
+                            .sum();
+                }
+            }
+            if (segments == null)
+                logFiles();
+            long total = 0L;
+            for (LogFileSegment segment : discoveredSegments)
+                total += Files.size(segment.getPath());
+            return total;
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
     }
 
     /**
@@ -132,6 +161,7 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
+        discoveredSegments = List.copyOf(segments);
         orderSegments();
     }
 
