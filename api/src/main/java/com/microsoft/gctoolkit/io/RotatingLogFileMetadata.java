@@ -3,6 +3,7 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,6 +56,39 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
             LOG.warning(ioe.getMessage());
         }
         orderSegments();
+    }
+
+    /**
+     * Return the combined size in bytes of all discovered log segments, including the active log.
+     * For a ZIP file, this is the sum of the uncompressed sizes of all non-directory entries.
+     * @return The total size in bytes, or 0 if there are no eligible entries.
+     * @throws UncheckedIOException if a segment size cannot be read.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(zipEntry -> Math.max(0L, zipEntry.getSize()))
+                        .sum();
+            } catch (IOException ioe) {
+                throw new UncheckedIOException(ioe);
+            }
+        }
+        // size discovered segments directly; ordering may drop segments without readable time stamps
+        return discoverSegments().stream()
+                .map(LogFileSegment::getPath)
+                .filter(Files::isRegularFile)
+                .mapToLong(RotatingLogFileMetadata::sizeOf)
+                .sum();
+    }
+
+    private static long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ioe) {
+            throw new UncheckedIOException(ioe);
+        }
     }
 
     /**
@@ -119,20 +153,25 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     private void findSegments() {
-        segments = new ArrayList<>();
+        segments = discoverSegments();
+        orderSegments();
+    }
+
+    private List<LogFileSegment> discoverSegments() {
+        List<LogFileSegment> discovered = new ArrayList<>();
         try {
             if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+                Files.list(getPath()).map(GCLogFileSegment::new).forEach(discovered::add);
             }
             else {
                 Files.list(getPath().getParent())
                         .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
+                        .map(p -> new GCLogFileSegment(p)).forEach(discovered::add);
             }
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
         }
-        orderSegments();
+        return discovered;
     }
 
     private void orderSegments() {
