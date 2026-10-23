@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -47,14 +48,24 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // Each segment stream may hold an open archive (see GCLogFileZipSegment). flatMap closes a
+            // segment stream once exhausted, but a caller that closes the composed stream after partial
+            // consumption would otherwise leak the in-progress segment. Track every segment stream as it
+            // is opened and close them all when the composed stream is closed.
+            List<Stream<String>> openedSegments = new ArrayList<>();
+            Stream<String> body = getMetaData().logFiles()
+                    .flatMap(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        openedSegments.add(segmentStream);
+                        return segmentStream;
+                    })
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(body, Stream.of(endOfData()))
+                    .onClose(() -> openedSegments.forEach(Stream::close));
+        }
         else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
     }
