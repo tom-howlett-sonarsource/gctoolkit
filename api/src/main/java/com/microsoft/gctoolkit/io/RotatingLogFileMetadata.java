@@ -58,6 +58,45 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment, including
+     * the active log. For ZIP input the uncompressed sizes of all non-directory entries
+     * are summed. Returns {@code 0L} when there are no eligible segments.
+     * @return The total byte size of all log segments.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (ZipFile zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(entry -> !entry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.warning(ioe.getMessage());
+                return 0L;
+            }
+        }
+        try (Stream<Path> files = isDirectory()
+                ? Files.list(getPath())
+                : Files.list(getPath().getParent())
+                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))) {
+            return files
+                    .filter(path -> !Files.isDirectory(path))
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException ioe) {
+                            LOG.log(Level.WARNING, "Unable to determine size of log segment.", ioe);
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
