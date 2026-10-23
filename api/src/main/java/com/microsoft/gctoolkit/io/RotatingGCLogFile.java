@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,15 +48,26 @@ public class RotatingGCLogFile extends GCLogFile {
 
     @Override
     public Stream<String> stream() throws IOException {
-        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip())
-            return Stream.concat(
-                    getMetaData().logFiles()
-                    .flatMap(LogFileSegment::stream)
+        if ( getMetaData().isDirectory() || getMetaData().isPlainText() || getMetaData().isZip()) {
+            // Track the per-segment streams as they are opened so that closing the composed
+            // stream releases every underlying archive resource, even if the caller abandons
+            // the composed stream after only partially consuming it (flatMap only closes a
+            // sub-stream once it has been fully drained).
+            List<Stream<String>> openedSegments = new CopyOnWriteArrayList<>();
+            Stream<String> lines = getMetaData().logFiles()
+                    .map(segment -> {
+                        Stream<String> segmentStream = segment.stream();
+                        if (segmentStream != null)
+                            openedSegments.add(segmentStream);
+                        return segmentStream;
+                    })
+                    .flatMap(segmentStream -> segmentStream)
                     .filter(Objects::nonNull)
                     .map(String::trim)
-                    .filter(s -> s.length() > 0),
-                    Stream.of(endOfData()));
-        else // yes, this is returning an empty stream.
+                    .filter(s -> s.length() > 0);
+            return Stream.concat(lines, Stream.of(endOfData()))
+                    .onClose(() -> openedSegments.forEach(Stream::close));
+        } else // yes, this is returning an empty stream.
             return Stream.of(endOfData());
     }
 
@@ -107,8 +119,21 @@ public class RotatingGCLogFile extends GCLogFile {
         }
 
         SequenceInputStream sequenceInputStream = new SequenceInputStream(streams.elements());
-        
-        return new BufferedReader(new InputStreamReader(sequenceInputStream)).lines();
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(sequenceInputStream));
+        // Closing the reader drains the SequenceInputStream (and its per-entry streams);
+        // the ZipFile is a distinct resource that must be closed explicitly as well.
+        return reader.lines().onClose(() -> {
+            try {
+                try {
+                    reader.close();
+                } finally {
+                    zipFile.close();
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
     /**
