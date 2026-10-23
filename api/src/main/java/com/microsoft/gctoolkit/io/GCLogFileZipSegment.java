@@ -4,9 +4,7 @@ package com.microsoft.gctoolkit.io;
 
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,19 +54,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
+            try (Stream<String> lines = stream()) {
+                startTime = lines
                     .filter(s -> ! s.contains(" file created "))
                     .map(DateTimeStamp::fromGCLogLine)
                     .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
                     .findFirst()
                     .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -129,8 +131,15 @@ public class GCLogFileZipSegment implements LogFileSegment {
     public Stream<String> stream() {
         try {
             ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            try {
+                ZipEntry entry = file.getEntry(this.segmentName);
+                if (entry == null)
+                    throw new IOException(segmentName + " not found in " + path);
+                return LineStreams.lines(file.getInputStream(entry), file);
+            } catch (IOException | RuntimeException e) {
+                file.close();
+                throw e;
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
