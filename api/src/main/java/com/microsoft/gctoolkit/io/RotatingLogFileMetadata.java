@@ -30,6 +30,57 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         super(path);
     }
 
+    /**
+     * Return the combined byte size of every discovered rotating log segment,
+     * including the active log. For ZIP input, the uncompressed sizes of all
+     * non-directory entries are summed.
+     * @return The total byte size of all eligible segments, or {@code 0L} if there are none.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipTotalByteSize();
+
+        try (Stream<Path> files = discoverSegmentPaths()) {
+            return files
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException ioe) {
+                            LOG.log(Level.WARNING, "Unable to determine size of log segment.", ioe);
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
+    private Stream<Path> discoverSegmentPaths() throws IOException {
+        if (isDirectory())
+            return Files.list(getPath()).filter(Files::isRegularFile);
+
+        // Ensure segments are discovered so the root pattern can be derived.
+        logFiles();
+        return Files.list(getPath().getParent())
+                .filter(Files::isRegularFile)
+                .filter(file -> file.getFileName().toString().startsWith(getRootPattern()));
+    }
+
+    private long zipTotalByteSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(ZipEntry::getSize)
+                    .filter(size -> size >= 0L)
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
     public Stream<LogFileSegment> logFiles() {
         if ( segments == null) {
             if ( isPlainText() || isDirectory())
