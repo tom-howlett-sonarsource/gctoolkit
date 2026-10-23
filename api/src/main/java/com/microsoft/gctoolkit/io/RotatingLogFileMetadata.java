@@ -118,20 +118,58 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
         return base.toString();
     }
 
-    private void findSegments() {
-        segments = new ArrayList<>();
-        try {
-            if (isDirectory()) {
-                Files.list(getPath()).map(GCLogFileSegment::new).forEach(segments::add);
+    /**
+     * Return the combined size in bytes of every discovered rotating log segment, including
+     * the active log. For ZIP files this is the sum of the uncompressed sizes of all
+     * non-directory entries.
+     * @return the total size in bytes, or 0 if there are no eligible entries.
+     */
+    public long getTotalByteSize() {
+        if (isZip())
+            return zipUncompressedSize();
+        long total = 0L;
+        for (Path segmentPath : discoverSegmentPaths()) {
+            try {
+                if (Files.isRegularFile(segmentPath))
+                    total += Files.size(segmentPath);
+            } catch (IOException ioe) {
+                LOG.log(Level.WARNING, "Unable to determine size of " + segmentPath, ioe);
             }
-            else {
-                Files.list(getPath().getParent())
-                        .filter(file -> file.getFileName().toString().startsWith(getRootPattern()))
-                        .map(p -> new GCLogFileSegment(p)).forEach(segments::add);
-            }
+        }
+        return total;
+    }
+
+    private long zipUncompressedSize() {
+        try (var zipfile = new ZipFile(getPath().toFile())) {
+            return zipfile.stream()
+                    .filter(zipEntry -> !zipEntry.isDirectory())
+                    .mapToLong(zipEntry -> Math.max(zipEntry.getSize(), 0L))
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.warning(ioe.getMessage());
+            return 0L;
+        }
+    }
+
+    private List<Path> discoverSegmentPaths() {
+        boolean directory = isDirectory();
+        Path parent = directory ? getPath() : getPath().getParent();
+        try (Stream<Path> files = Files.list(parent)) {
+            if (directory)
+                return files.collect(toList());
+            String rootPattern = getRootPattern();
+            return files.filter(file -> file.getFileName().toString().startsWith(rootPattern))
+                    .collect(toList());
         } catch (IOException ioe) {
             LOG.log(Level.WARNING,"Unable to find log segments.", ioe);
+            return new ArrayList<>();
         }
+    }
+
+    private void findSegments() {
+        segments = discoverSegmentPaths().stream()
+                .map(GCLogFileSegment::new)
+                .collect(toList());
         orderSegments();
     }
 
