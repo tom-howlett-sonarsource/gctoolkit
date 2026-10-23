@@ -58,6 +58,53 @@ public class RotatingLogFileMetadata extends LogFileMetadata {
     }
 
     /**
+     * Return the combined byte size of every discovered rotating log segment, including the
+     * active log. For ZIP input the uncompressed sizes of all non-directory entries are summed.
+     * @return The total byte size of all eligible segments, or {@code 0L} when there are none.
+     */
+    public long getTotalByteSize() {
+        if (isZip()) {
+            try (var zipfile = new ZipFile(getPath().toFile())) {
+                return zipfile.stream()
+                        .filter(zipEntry -> !zipEntry.isDirectory())
+                        .mapToLong(ZipEntry::getSize)
+                        .filter(size -> size >= 0L)
+                        .sum();
+            } catch (IOException ioe) {
+                LOG.warning(ioe.getMessage());
+                return 0L;
+            }
+        }
+        // Ensure segments are discovered (and the root pattern is established) before sizing.
+        logFiles();
+        try (Stream<Path> files = discoverSegmentPaths()) {
+            return files
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException ioe) {
+                            LOG.log(Level.WARNING, "Unable to determine size of segment.", ioe);
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException ioe) {
+            LOG.log(Level.WARNING, "Unable to find log segments.", ioe);
+            return 0L;
+        }
+    }
+
+    private Stream<Path> discoverSegmentPaths() throws IOException {
+        if (isDirectory()) {
+            return Files.list(getPath());
+        }
+        String rootPattern = getRootPattern();
+        return Files.list(getPath().getParent())
+                .filter(file -> file.getFileName().toString().startsWith(rootPattern));
+    }
+
+    /**
      * Return the number of files. Useful if the file is a compressed file which may
      * contain multiple entries.
      * @return The number of files in the file.
