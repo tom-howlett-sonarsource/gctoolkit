@@ -3,9 +3,8 @@
 package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -68,17 +67,27 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        ZipInputStream zipStream = new ZipInputStream(new BufferedInputStream(Files.newInputStream(path)));
+        try {
+            ZipEntry entry;
+            do {
+                entry = zipStream.getNextEntry();
+            } while (entry != null && entry.isDirectory());
+        } catch (IOException e) {
+            throw ClosingLines.closeOnFailure(zipStream, e);
+        }
+        return ClosingLines.of(zipStream, zipStream);
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        InputStream fileStream = Files.newInputStream(path);
+        GZIPInputStream gzipStream;
+        try {
+            gzipStream = new GZIPInputStream(new BufferedInputStream(fileStream));
+        } catch (IOException e) {
+            throw ClosingLines.closeOnFailure(fileStream, e);
+        }
+        return ClosingLines.of(gzipStream, gzipStream);
     }
 
 }
