@@ -5,6 +5,7 @@ package com.microsoft.gctoolkit.io;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
@@ -56,19 +57,23 @@ public class GCLogFileZipSegment implements LogFileSegment {
 
     private void ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .filter(s -> ! s.contains(" file created "))
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .filter(s -> ! s.contains(" file created "))
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
     }
 
     private DateTimeStamp ageOfJVMAtLogEnd()  {
         if (endTime == null) {
-            List<String> tail = stream().
-                    collect(tail(100));
+            List<String> tail;
+            try (Stream<String> lines = stream()) {
+                tail = lines.collect(tail(100));
+            }
             endTime = tail.stream()
                     .filter(line -> ! line.contains("Saved as"))
                     .map(DateTimeStamp::fromGCLogLine)
@@ -123,18 +128,38 @@ public class GCLogFileZipSegment implements LogFileSegment {
     }
 
     /**
-     * Stream the file, one line at a time.
+     * Stream the file, one line at a time. The returned stream holds the underlying
+     * {@link ZipFile} and reader open; closing the stream releases both. {@code BufferedReader.lines()}
+     * does not close its reader on its own, and the {@code ZipFile} is a resource distinct from the
+     * entry's input stream, so both are closed explicitly from the stream's {@code onClose} handler.
      * @return A stream of lines from the file.
      */
     public Stream<String> stream() {
+        ZipFile file = null;
         try {
-            ZipFile file = new ZipFile(path.toFile());
+            file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            final ZipFile archive = file;
+            return reader.lines().onClose(() -> {
+                closeQuietly(reader);
+                closeQuietly(archive);
+            });
         } catch (IOException e) {
+            closeQuietly(file);
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        if (closeable == null)
+            return;
+        try {
+            closeable.close();
+        } catch (IOException ignore) {
+            // nothing useful to do if closing the archive resource fails
+        }
     }
 
     /**

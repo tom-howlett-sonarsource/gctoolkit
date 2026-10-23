@@ -4,6 +4,7 @@ package com.microsoft.gctoolkit.io;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
@@ -73,12 +74,26 @@ public class SingleGCLogFile extends GCLogFile {
         do {
             entry = zipStream.getNextEntry();
         } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        // BufferedReader.lines() does not close its reader when the stream is closed, so
+        // closing the reader (which cascades to the ZipInputStream and the file) is wired up explicitly.
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream)));
+        return reader.lines().onClose(() -> closeQuietly(reader));
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
         GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream)));
+        return reader.lines().onClose(() -> closeQuietly(reader));
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        if (closeable == null)
+            return;
+        try {
+            closeable.close();
+        } catch (IOException ignore) {
+            // nothing useful to do if closing the underlying archive resource fails
+        }
     }
 
 }
