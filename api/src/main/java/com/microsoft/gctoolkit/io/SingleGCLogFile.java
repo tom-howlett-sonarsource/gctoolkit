@@ -12,8 +12,6 @@ import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * A single GC log file. If the file is a zip or gzip file,
@@ -68,12 +66,7 @@ public class SingleGCLogFile extends GCLogFile {
     }
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry != null && entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        return ZipLogFile.stream(path);
     }
 
     private static Stream<String> streamGZipFile(Path path) throws IOException {
