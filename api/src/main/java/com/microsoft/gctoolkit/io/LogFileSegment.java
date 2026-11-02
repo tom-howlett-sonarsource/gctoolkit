@@ -13,5 +13,8 @@ public interface LogFileSegment {
     String getSegmentName();
     double getStartTime();
     double getEndTime();
+    /**
+     * @return log lines; the caller must close the stream to release file resources
+     */
     Stream<String> stream();
 }

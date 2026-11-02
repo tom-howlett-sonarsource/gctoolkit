@@ -21,7 +21,8 @@ public interface DataSource<T> {
     Diary diary() throws IOException;
 
     /**
-     * Return a stream of the data.
+     * Return a stream of the data. The caller must close the stream, preferably
+     * using try-with-resources; terminal operations do not release its resources.
      * @return A stream of the data.
      * @throws IOException Thrown if the data cannot be streamed,
      * or an IOException is raised while streaming.
