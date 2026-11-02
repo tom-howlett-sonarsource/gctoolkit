@@ -22,6 +22,8 @@ public interface DataSource<T> {
 
     /**
      * Return a stream of the data.
+     * File-backed streams must be closed by the caller, even after a terminal operation or
+     * short-circuiting read, to release their underlying resources.
      * @return A stream of the data.
      * @throws IOException Thrown if the data cannot be streamed,
      * or an IOException is raised while streaming.
