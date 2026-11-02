@@ -129,11 +129,13 @@ public class GCLogFileSegment implements LogFileSegment {
 
     private DateTimeStamp ageOfJVMAtLogStart() {
         if (startTime == null) {
-            startTime = stream()
-                    .map(DateTimeStamp::fromGCLogLine)
-                    .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
-                    .findFirst()
-                    .orElse(new DateTimeStamp(-1.0d));
+            try (Stream<String> lines = stream()) {
+                startTime = lines
+                        .map(DateTimeStamp::fromGCLogLine)
+                        .filter(dateTimeStamp -> dateTimeStamp.hasTimeStamp() || dateTimeStamp.hasDateStamp())
+                        .findFirst()
+                        .orElse(new DateTimeStamp(-1.0d));
+            }
         }
         return startTime;
     }
@@ -169,43 +171,44 @@ public class GCLogFileSegment implements LogFileSegment {
         char CR = '\r';
         boolean foundEOL = false;
         char eol = 0;
-        RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r");
-        long currentPosition = randomAccessFile.length() - 1;
-        int linesFound = 0;
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile(path.toFile(), "r")) {
+            long currentPosition = randomAccessFile.length() - 1;
+            int linesFound = 0;
 
-        while (currentPosition > 0 && !foundEOL) {
-            randomAccessFile.seek(currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (character == LF) {
-                eol = LF;
-                randomAccessFile.seek(currentPosition - 1);
-                character = (char) randomAccessFile.readByte();
-                if (character == CR)
+            while (currentPosition > 0 && !foundEOL) {
+                randomAccessFile.seek(currentPosition);
+                char character = (char) randomAccessFile.readByte();
+                if (character == LF) {
+                    eol = LF;
+                    randomAccessFile.seek(currentPosition - 1);
+                    character = (char) randomAccessFile.readByte();
+                    if (character == CR)
+                        eol = CR;
+                    foundEOL = true;
+                } else if (character == CR && !foundEOL) {
                     eol = CR;
-                foundEOL = true;
-            } else if (character == CR && !foundEOL) {
-                eol = CR;
-                foundEOL = true;
-            } else
-                currentPosition--;
-        }
-
-        currentPosition = randomAccessFile.length() - 1;
-
-        while (currentPosition > 0 && linesFound < numberOfLines) {
-            randomAccessFile.seek(--currentPosition);
-            char character = (char) randomAccessFile.readByte();
-            if (eol == character)
-                linesFound++;
-        }
-
-        ArrayList<String> lines = new ArrayList<>();
-        if (linesFound > 0) {
-            String line;
-            while ((line = randomAccessFile.readLine()) != null) {
-                lines.add(line);
+                    foundEOL = true;
+                } else
+                    currentPosition--;
             }
+
+            currentPosition = randomAccessFile.length() - 1;
+
+            while (currentPosition > 0 && linesFound < numberOfLines) {
+                randomAccessFile.seek(--currentPosition);
+                char character = (char) randomAccessFile.readByte();
+                if (eol == character)
+                    linesFound++;
+            }
+
+            ArrayList<String> lines = new ArrayList<>();
+            if (linesFound > 0) {
+                String line;
+                while ((line = randomAccessFile.readLine()) != null) {
+                    lines.add(line);
+                }
+            }
+            return lines;
         }
-        return lines;
     }
 }

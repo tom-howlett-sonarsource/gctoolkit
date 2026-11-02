@@ -4,18 +4,15 @@ package com.microsoft.gctoolkit.parser.io;
 
 import com.microsoft.gctoolkit.io.DataSource;
 import com.microsoft.gctoolkit.io.GCLogFile;
+import com.microsoft.gctoolkit.io.GZipLogFile;
 import com.microsoft.gctoolkit.io.LogFileMetadata;
 import com.microsoft.gctoolkit.io.ZipLogFile;
 import com.microsoft.gctoolkit.jvm.Diary;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
-import java.util.zip.GZIPInputStream;
 
 public class SafepointLogFile implements DataSource<String> {
 
@@ -58,8 +55,7 @@ public class SafepointLogFile implements DataSource<String> {
     }
 
     Stream<String> streamGZipFile() throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
+        return GZipLogFile.stream(path);
     }
 
 }

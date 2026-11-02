@@ -2,16 +2,12 @@
 // Licensed under the MIT License.
 package com.microsoft.gctoolkit.io;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import java.util.zip.GZIPInputStream;
 
 /**
  * A single GC log file. If the file is a zip or gzip file,
@@ -52,7 +48,7 @@ public class SingleGCLogFile extends GCLogFile {
         } else if (metadata.isZip()) {
             stream = streamZipFile(metadata.getPath());
         } else if (metadata.isGZip()) {
-            stream = streamGZipFile(metadata.getPath());
+            stream = GZipLogFile.stream(metadata.getPath());
         }
         if ( stream == null)
             throw new IOException("Unable to read " + path.toString());
@@ -67,11 +63,6 @@ public class SingleGCLogFile extends GCLogFile {
 
     private static Stream<String> streamZipFile(Path path) throws IOException {
         return ZipLogFile.stream(path);
-    }
-
-    private static Stream<String> streamGZipFile(Path path) throws IOException {
-        GZIPInputStream gzipStream = new GZIPInputStream(Files.newInputStream(path));
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(gzipStream))).lines();
     }
 
 }
