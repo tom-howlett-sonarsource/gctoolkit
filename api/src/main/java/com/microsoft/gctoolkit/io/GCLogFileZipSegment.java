@@ -5,8 +5,10 @@ package com.microsoft.gctoolkit.io;
 import com.microsoft.gctoolkit.time.DateTimeStamp;
 
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -126,15 +128,45 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * Stream the file, one line at a time.
      * @return A stream of lines from the file.
      */
+    @SuppressWarnings("java:S2095")
     public Stream<String> stream() {
         try {
             ZipFile file = new ZipFile(path.toFile());
-            ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            return lines(file);
         } catch (IOException e) {
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    private Stream<String> lines(ZipFile file) throws IOException {
+        BufferedReader reader;
+        try {
+            ZipEntry entry = file.getEntry(this.segmentName);
+            reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+        } catch (IOException e) {
+            closeAfterFailure(file, e);
+            throw e;
+        }
+        return reader.lines()
+                .onClose(() -> close(reader))
+                .onClose(() -> close(file));
+    }
+
+    private static void closeAfterFailure(ZipFile file, IOException failure) {
+        try {
+            file.close();
+        } catch (IOException closeException) {
+            failure.addSuppressed(closeException);
+        }
+    }
+
+    private static void close(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
