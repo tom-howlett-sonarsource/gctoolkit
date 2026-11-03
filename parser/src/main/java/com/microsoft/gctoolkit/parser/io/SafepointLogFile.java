@@ -5,6 +5,7 @@ package com.microsoft.gctoolkit.parser.io;
 import com.microsoft.gctoolkit.io.DataSource;
 import com.microsoft.gctoolkit.io.GCLogFile;
 import com.microsoft.gctoolkit.io.LogFileMetadata;
+import com.microsoft.gctoolkit.io.ZipFileStreams;
 import com.microsoft.gctoolkit.jvm.Diary;
 
 import java.io.BufferedInputStream;
@@ -15,8 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 public class SafepointLogFile implements DataSource<String> {
 
@@ -55,12 +54,7 @@ public class SafepointLogFile implements DataSource<String> {
     }
 
     Stream<String> streamZipFile() throws IOException {
-        ZipInputStream zipStream = new ZipInputStream(Files.newInputStream(path));
-        ZipEntry entry;
-        do {
-            entry = zipStream.getNextEntry();
-        } while (entry.isDirectory());
-        return new BufferedReader(new InputStreamReader(new BufferedInputStream(zipStream))).lines();
+        return ZipFileStreams.firstEntry(path);
     }
 
     Stream<String> streamGZipFile() throws IOException {

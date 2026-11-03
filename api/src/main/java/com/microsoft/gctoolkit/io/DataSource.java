@@ -22,6 +22,8 @@ public interface DataSource<T> {
 
     /**
      * Return a stream of the data.
+     * The caller must close the stream, preferably with try-with-resources, to release
+     * any underlying file or archive resources, even when the stream is not fully consumed.
      * @return A stream of the data.
      * @throws IOException Thrown if the data cannot be streamed,
      * or an IOException is raised while streaming.

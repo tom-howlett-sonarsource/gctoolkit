@@ -12,6 +12,7 @@ import com.microsoft.gctoolkit.parser.datatype.TripleState;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
@@ -96,13 +97,18 @@ public abstract class GCLogFile extends FileDataSource<String> {
     public Diary diary() throws IOException {
         if ( diary == null) {
             Diarizer diarizer = diarizer();
-            stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(s -> s.length() > 0)
-                    .map(diarizer::diarize)
-                    .filter(completed -> completed)
-                    .findFirst();
+            try (Stream<String> lines = stream()) {
+                Iterator<String> iterator = lines
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .iterator();
+                while (iterator.hasNext()) {
+                    if (diarizer.diarize(iterator.next())) {
+                        break;
+                    }
+                }
+            }
             this.diary = diarizer.getDiary();
         }
         return diary;
