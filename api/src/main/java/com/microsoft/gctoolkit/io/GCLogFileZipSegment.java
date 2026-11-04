@@ -7,6 +7,7 @@ import com.microsoft.gctoolkit.time.DateTimeStamp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -126,15 +127,34 @@ public class GCLogFileZipSegment implements LogFileSegment {
      * Stream the file, one line at a time.
      * @return A stream of lines from the file.
      */
+    @SuppressWarnings("java:S2095")
     public Stream<String> stream() {
+        ZipFile file = null;
         try {
-            ZipFile file = new ZipFile(path.toFile());
+            file = new ZipFile(path.toFile());
             ZipEntry entry = file.getEntry(this.segmentName);
-            return new BufferedReader(new InputStreamReader(file.getInputStream(entry))).lines();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(entry)));
+            ZipFile archive = file;
+            return reader.lines().onClose(() -> close(reader, archive));
         } catch (IOException e) {
+            if (file != null) {
+                try {
+                    file.close();
+                } catch (IOException closeException) {
+                    e.addSuppressed(closeException);
+                }
+            }
             e.printStackTrace();
         }
         return new ArrayList<String>().stream();
+    }
+
+    private static void close(BufferedReader reader, ZipFile file) {
+        try (ZipFile ignoredFile = file; BufferedReader ignoredReader = reader) {
+            // Closing the reader first closes the entry stream before the archive.
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
