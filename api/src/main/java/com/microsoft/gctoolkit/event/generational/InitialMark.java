@@ -18,6 +18,10 @@ public class InitialMark extends CMSPauseEvent {
     }
 
     public void add(MemoryPoolSummary tenured, MemoryPoolSummary heap) {
+        if (heap == null) {
+            this.add(null, tenured, null);
+            return;
+        }
         this.add(heap.minus(tenured), tenured, heap);
     }
 
